@@ -1,0 +1,134 @@
+import http from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { join, extname, normalize } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { db } from './src/db.js';
+import { handlers, authenticate, HttpError, MAX_FILE_BYTES } from './src/controller.js';
+
+const PUBLIC = join(fileURLToPath(new URL('.', import.meta.url)), 'public');
+const MAX_BODY = Math.ceil(MAX_FILE_BYTES * 1.4) + 4096; // base64 overhead
+
+const S = 'student', V = 'supervisor', A = 'admin';
+// [method, path, handler, allowed roles (null = public, [] = any logged-in user)]
+const routes = [
+  ['POST', '/api/login', 'login', null],
+  ['POST', '/api/logout', 'logout', []],
+  ['GET', '/api/me', 'me', []],
+  ['POST', '/api/me/password', 'changePassword', []],
+  ['GET', '/api/courses', 'listCourses', []],
+  ['POST', '/api/courses', 'createCourse', [A]],
+  ['GET', '/api/supervisors', 'listSupervisors', []],
+  ['GET', '/api/students', 'listStudents', [V, A]],
+  ['GET', '/api/users', 'listUsers', [A]],
+  ['POST', '/api/users', 'createUser', [A]],
+  ['PATCH', '/api/users/:id', 'updateUser', [A]],
+  ['PATCH', '/api/users/:id/role', 'assignRole', [A]],
+  ['DELETE', '/api/users/:id', 'deleteUser', [A]],
+  ['GET', '/api/research', 'listResearch', []],
+  ['POST', '/api/research', 'registerTopic', [S]],
+  ['GET', '/api/research/:id', 'getResearchDetail', []],
+  ['PUT', '/api/research/:id/deadline', 'setDeadline', [A]],
+  ['POST', '/api/research/:id/versions', 'uploadVersion', [S]],
+  ['POST', '/api/research/:id/approve', 'approve', [V]],
+  ['POST', '/api/research/:id/request-changes', 'requestChanges', [V]],
+  ['PUT', '/api/research/:id/grade', 'grade', [V]],
+  ['POST', '/api/submissions/:id/notes', 'addNote', [V]],
+  ['GET', '/api/submissions/:id/file', 'downloadFile', []],
+  ['GET', '/api/teams', 'listTeams', [V, A]],
+  ['POST', '/api/teams', 'formTeams', [V, A]],
+  ['GET', '/api/reports', 'reports', [A]],
+  ['GET', '/api/notifications', 'listNotifications', []],
+  ['POST', '/api/notifications/read', 'readNotifications', []],
+].map(([method, path, handler, roles]) => ({
+  method, handler, roles,
+  re: new RegExp('^' + path.replace(/:(\w+)/g, '(?<$1>[^/]+)') + '$'),
+}));
+
+// Behind a hosting proxy (Render/Fly/Railway...) set TRUST_PROXY=1 so rate limiting sees the real client IP.
+const clientIp = req => process.env.TRUST_PROXY === '1'
+  ? (req.headers['x-forwarded-for'] ?? '').split(',')[0].trim() || req.socket.remoteAddress
+  : req.socket.remoteAddress;
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
+const SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer',
+  'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+};
+const HSTS = process.env.NODE_ENV === 'production' ? { 'Strict-Transport-Security': 'max-age=31536000' } : {};
+const send = (res, status, body, headers = {}) => {
+  res.writeHead(status, { ...SECURITY_HEADERS, ...HSTS, ...headers });
+  res.end(body);
+};
+const json = (res, status, obj) => send(res, status, JSON.stringify(obj), { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = []; let size = 0, tooBig = false;
+    req.on('data', c => {
+      size += c.length;
+      if (tooBig) return; // stop buffering; connection is closed after the 413 is sent
+      if (size > MAX_BODY) { tooBig = true; chunks.length = 0; reject(new HttpError(413, 'Request too large')); }
+      else chunks.push(c);
+    });
+    req.on('end', () => {
+      if (tooBig) return;
+      if (!chunks.length) return resolve({});
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
+      catch { reject(new HttpError(400, 'Invalid JSON')); }
+    });
+    req.on('error', reject);
+  });
+}
+
+async function api(req, res, url) {
+  const t0 = Date.now();
+  if (process.env.LOG !== 'off') res.on('finish', () => console.log(`${req.method} ${url.pathname} ${res.statusCode} ${Date.now() - t0}ms`));
+  try {
+    const route = routes.find(r => r.method === req.method && r.re.test(url.pathname));
+    if (!route) throw new HttpError(404, 'Not found');
+    const token = (req.headers.authorization ?? '').replace(/^Bearer /, '') || null;
+    const user = route.roles === null ? null : authenticate(token);
+    if (route.roles !== null) {
+      if (!user) throw new HttpError(401, 'Please log in');
+      if (route.roles.length && !route.roles.includes(user.role)) throw new HttpError(403, 'Not allowed for your role');
+    }
+    const params = url.pathname.match(route.re).groups ?? {};
+    const body = ['POST', 'PUT', 'PATCH'].includes(req.method) ? await readBody(req) : {};
+    const out = handlers[route.handler]({ user, token, params, body, query: url.searchParams, ip: clientIp(req) });
+    if (out?.file) {
+      return send(res, 200, out.file, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition': `attachment; filename="${encodeURIComponent(out.filename)}"`,
+      });
+    }
+    if (out?.total !== undefined) res.setHeader('X-Total-Count', out.total);
+    json(res, 200, out);
+  } catch (e) {
+    if (e instanceof HttpError) {
+      if (e.status === 413) { res.setHeader('Connection', 'close'); res.on('finish', () => req.destroy()); }
+      return json(res, e.status, { error: e.message });
+    }
+    console.error(e);
+    json(res, 500, { error: 'Internal server error' });
+  }
+}
+
+async function serveStatic(res, pathname) {
+  const rel = normalize(pathname === '/' ? '/index.html' : pathname);
+  const file = join(PUBLIC, rel);
+  if (!file.startsWith(PUBLIC) || !MIME[extname(file)]) return send(res, 404, 'Not found');
+  try { send(res, 200, await readFile(file), { 'Content-Type': MIME[extname(file)] }); }
+  catch { send(res, 404, 'Not found'); }
+}
+
+export const server = http.createServer((req, res) => {
+  const url = new URL(req.url, 'http://localhost');
+  if (url.pathname.startsWith('/api/')) api(req, res, url);
+  else serveStatic(res, decodeURIComponent(url.pathname));
+});
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const port = Number(process.env.PORT) || 3000;
+  server.listen(port, () => console.log(`Research PMS running at http://localhost:${port}`));
+  const stop = () => { server.close(() => { db.close(); process.exit(0); }); setTimeout(() => process.exit(1), 5000).unref(); };
+  process.on('SIGTERM', stop); process.on('SIGINT', stop);
+}

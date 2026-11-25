@@ -1,0 +1,47 @@
+:root{--bg:#f4f6f9;--card:#fff;--ink:#1c2430;--mute:#667085;--line:#e3e8ef;--brand:#1f5f8b;--brand-d:#174a6d;
+--ok:#18794e;--warn:#b45309;--bad:#b42318;--info:#175cd3}
+@media(prefers-color-scheme:dark){:root{--bg:#10151c;--card:#18202a;--ink:#e6ebf2;--mute:#97a3b4;--line:#2a3441;--brand:#4a9bd1;--brand-d:#6bb0e0;
+--ok:#4ade80;--warn:#fbbf24;--bad:#f87171;--info:#7cb4ff}}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:var(--card);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+header h1{font-size:17px;margin:0;flex:1;min-width:160px}
+main{max-width:1000px;margin:0 auto;padding:16px}
+nav{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+nav button{background:transparent;color:var(--ink);border:1px solid var(--line)}
+nav button.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+.card h2,.card h3{margin:0 0 10px}
+.login{max-width:380px;margin:8vh auto}
+label{display:block;font-weight:600;margin:10px 0 4px;font-size:13px}
+input,select,textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);font:inherit}
+textarea{min-height:70px;resize:vertical}
+button{font:inherit;padding:8px 14px;border:0;border-radius:7px;background:var(--brand);color:#fff;cursor:pointer}
+button:hover{background:var(--brand-d)} button.ghost{background:transparent;color:var(--brand);border:1px solid var(--line)}
+button.ok{background:var(--ok)} button.bad{background:var(--bad)} button.warn{background:var(--warn)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row>*{flex:0 0 auto}.grow{flex:1 1 200px!important}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:start;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+th{text-align:start;font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.04em}
+tr.click{cursor:pointer}tr.click:hover{background:var(--bg)}
+.badge{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:600;border:1px solid currentColor}
+.pending{color:var(--info)}.approved{color:var(--ok)}.changes_requested{color:var(--warn)}.rejected{color:var(--bad)}
+.mute{color:var(--mute)}.small{font-size:13px}
+.note{background:var(--bg);border-inline-start:3px solid var(--brand);padding:6px 10px;margin:6px 0;border-radius:4px}
+.ver{border:1px solid var(--line);border-radius:8px;padding:12px;margin:10px 0}
+.bell{position:relative}.bell b{position:absolute;top:-6px;inset-inline-end:-6px;background:var(--bad);color:#fff;border-radius:99px;font-size:11px;padding:0 6px}
+.notifs{position:absolute;inset-inline-end:16px;top:52px;width:min(360px,calc(100vw - 32px));max-height:60vh;overflow:auto;z-index:5;box-shadow:0 8px 24px #0004}
+.notifs div{padding:8px 0;border-bottom:1px solid var(--line)}.notifs .unread{font-weight:600}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px}
+.stat b{font-size:24px;display:block}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw}
+#toast.show{opacity:1}#toast.err{background:var(--bad);color:#fff}
+.checks{max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:7px;padding:6px 10px}
+.checks label{font-weight:400;margin:4px 0;display:flex;gap:8px;align-items:center}.checks input{width:auto}
+@media(max-width:640px){th:nth-child(n+4),td:nth-child(n+4){display:none}.wide th,.wide td{display:table-cell!important}}
+
+.overdue{color:var(--bad)}.langbtn{min-width:64px}
+input[type=date]{width:auto}
+tr.late td:first-child{border-inline-start:3px solid var(--bad)}

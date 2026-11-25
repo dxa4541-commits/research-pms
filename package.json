@@ -1,0 +1,11 @@
+{
+  "name": "research-pms",
+  "version": "1.0.0",
+  "description": "Research Project Management System",
+  "type": "module",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server.js",
+    "test": "node --disable-warning=ExperimentalWarning test/smoke.test.js"
+  },
+  "engines": { "node": ">=22.5" }
+}
