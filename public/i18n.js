@@ -1,4 +1,6 @@
 import { EXTRA, ERR_EXTRA, ERR_EXTRA_PATTERNS } from './i18n-supervisor.js';
+import { EXTRA as U_EXTRA } from './i18n-ux.js';
+import { EXTRA as G_EXTRA } from './i18n-pages.js';
 import { EXTRA as S_EXTRA, ERR_EXTRA as S_ERR, ERR_EXTRA_PATTERNS as S_PAT } from './i18n-student.js';
 // UI strings. Server error messages (English) are translated by exact match or pattern; unknown ones show as-is.
 export const I18N = {
@@ -100,3 +102,6 @@ Object.assign(I18N.en, EXTRA.en); Object.assign(I18N.ar, EXTRA.ar);
 Object.assign(ERR_AR, ERR_EXTRA); ERR_AR_PATTERNS.unshift(...ERR_EXTRA_PATTERNS);
 Object.assign(I18N.en, S_EXTRA.en); Object.assign(I18N.ar, S_EXTRA.ar);
 Object.assign(ERR_AR, S_ERR); ERR_AR_PATTERNS.unshift(...S_PAT);
+Object.assign(I18N.en, U_EXTRA.en); Object.assign(I18N.ar, U_EXTRA.ar);
+Object.assign(ERR_AR, { 'Network error': 'خطأ في الاتصال', 'Request failed': 'فشل الطلب' });
+Object.assign(I18N.en, G_EXTRA.en); Object.assign(I18N.ar, G_EXTRA.ar);

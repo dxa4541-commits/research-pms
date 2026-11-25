@@ -11,7 +11,7 @@ supervisors (doctors) review, comment on and grade that work, and admins manage 
 ويدير المسؤول المستخدمين والمواعيد النهائية والتقارير.
 
 Full description: [docs/PROJECT_DESCRIPTION.md](docs/PROJECT_DESCRIPTION.md) — الوصف الكامل للمشروع.  
-Requirements traceability: [supervisor](docs/SUPERVISOR_REQUIREMENTS.md) · [student](docs/STUDENT_REQUIREMENTS.md).
+Requirements traceability: [supervisor](docs/SUPERVISOR_REQUIREMENTS.md) · [student](docs/STUDENT_REQUIREMENTS.md) · UI design system: [docs/UI_DESIGN.md](docs/UI_DESIGN.md).
 
 ## Supervisor (Doctor) permissions / صلاحيات الدكتور
 Research (own only): approve, reject **with reason**, request changes · custom stages (any number, formats, size, attempts, deadlines, rubric, assignment to students/teams, open/close/postpone, reorder) ·
@@ -54,7 +54,7 @@ Approved University IDs for trying the registration flow (non-production): `2024
 | Supervisor dashboard, progress reports (+CSV), history | supervisor | `/api/supervisor/dashboard`, `/reports`, `/reports/export` |
 
 ## Structure (MVC, as in the class diagram)
-- `public/` — view (client): `app.js` (shell/login), `core.js` (helpers, API client), `views/` (research, stages, supervisor dashboard/reports, messages, admin screens), `i18n.js`
+- `public/` — view (client; design system in `style.css` + `ui.js`, fonts in `fonts/`): `app.js` (shell/login), `core.js` (helpers, API client), `views/` (research, stages, supervisor dashboard/reports, messages, admin screens), `i18n.js`
 - `server.js` — routing + role checks
 - `src/controller.js` + `src/controllers/` — controller (auth, research, review, admin, notifications)
 - `src/research.js`, `src/stages.js`, `src/messages.js`, `src/notifications.js`, `src/audit.js`, `src/deadlines.js`, `src/errors.js` — model helpers (stages, messaging, history, deadline watcher)

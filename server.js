@@ -124,7 +124,7 @@ const routes = [
 const clientIp = req => process.env.TRUST_PROXY === '1'
   ? (req.headers['x-forwarded-for'] ?? '').split(',')[0].trim() || req.socket.remoteAddress
   : req.socket.remoteAddress;
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.woff2': 'font/woff2', '.svg': 'image/svg+xml' };
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer',
   'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
@@ -193,7 +193,7 @@ async function serveStatic(res, pathname) {
   const rel = normalize(pathname === '/' ? '/index.html' : pathname);
   const file = join(PUBLIC, rel);
   if (!file.startsWith(PUBLIC) || !MIME[extname(file)]) return send(res, 404, 'Not found');
-  try { send(res, 200, await readFile(file), { 'Content-Type': MIME[extname(file)] }); }
+  try { send(res, 200, await readFile(file), { 'Content-Type': MIME[extname(file)], ...(extname(file) === '.woff2' ? { 'Cache-Control': 'public, max-age=31536000, immutable' } : {}) }); }
   catch { send(res, 404, 'Not found'); }
 }
 

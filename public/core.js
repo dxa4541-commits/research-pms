@@ -58,6 +58,20 @@ export async function api(method, path, body) {
   return data;
 }
 export const download = (id, name) => downloadPath(`/api/submissions/${id}/file`, name);
+// POST/PUT with upload progress (XMLHttpRequest); resolves the parsed JSON, rejects with a translated message.
+export const apiUpload = (method, path, body, onProgress = () => {}) => new Promise((resolve, reject) => {
+  const x = new XMLHttpRequest(); x.open(method, '/api' + path);
+  x.setRequestHeader('Content-Type', 'application/json');
+  const token = localStorage.getItem('token'); if (token) x.setRequestHeader('Authorization', 'Bearer ' + token);
+  x.upload.onprogress = e => { if (e.lengthComputable) onProgress(e.loaded / e.total * 100); };
+  x.onerror = () => reject(new Error(tErr('Network error')));
+  x.onload = () => {
+    let data = {}; try { data = JSON.parse(x.responseText); } catch { /* empty body */ }
+    if (x.status === 401) { localStorage.removeItem('token'); state.user = null; render(); return reject(new Error(tErr('Please log in'))); }
+    x.status >= 200 && x.status < 300 ? resolve(data) : reject(new Error(tErr(data.error || 'Request failed')));
+  };
+  x.send(JSON.stringify(body));
+});
 export async function downloadPath(path, name) {
   const res = await fetch(path, { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } });
   if (!res.ok) return toast(tErr((await res.json()).error), true);
