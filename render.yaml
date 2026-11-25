@@ -1,16 +1,20 @@
 # Render Blueprint: New + → Blueprint → pick this repository.
+# Data lives in Supabase (database + file storage), so the free plan keeps everything across restarts.
+# See docs/SUPABASE.md for where to find each value.
 services:
   - type: web
     name: research-pms
     runtime: docker
-    plan: starter          # a persistent disk needs a paid plan; on the free plan all data is erased on every restart
+    plan: free
     healthCheckPath: /
     envVars:
       - key: ADMIN_PASSWORD
         sync: false        # you type it in the Render dashboard (8+ characters) — it is never stored in the repo
       - key: ADMIN_EMAIL
         value: admin@example.com
-    disk:
-      name: pms-data
-      mountPath: /data     # the Dockerfile keeps the database and uploads here
-      sizeGB: 1
+      - key: DATABASE_URL
+        sync: false        # Supabase → Connect → Session pooler connection string (with your database password)
+      - key: SUPABASE_URL
+        sync: false        # https://<project-ref>.supabase.co
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false        # Supabase → Project Settings → API Keys → secret key (server only, never share it)

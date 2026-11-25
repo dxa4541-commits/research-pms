@@ -1,6 +1,7 @@
 @echo off
 cd /d "%~dp0"
 where node >nul 2>nul || (echo Node.js is not installed. Download it from https://nodejs.org then run this file again. & pause & exit /b)
+if not exist node_modules (echo Installing the app the first time... & call npm install || (pause & exit /b))
 echo Starting the app... keep this window open.
 start "" cmd /c "timeout /t 3 >nul && start http://localhost:3000"
 npm start

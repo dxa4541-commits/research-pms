@@ -48,8 +48,9 @@
   - **Controller:** `src/controller.js` و`src/controllers/` (auth, research, review, admin, notifications).
   - **Model / Repository:** `src/db.js` (SQL) و`src/research.js`, `src/notifications.js`, `src/files.js`.
   - **Routing وفحص الصلاحيات:** `server.js` — كل مسار API له قائمة أدوار مسموحة.
-- **بدون أي اعتمادات خارجية:** يحتاج Node.js 22.5+ فقط، ويستخدم `node:sqlite` المدمج.
-- **قاعدة البيانات SQLite** (`data/app.db`) بوضع WAL، والملفات المرفوعة في `uploads/` بأسماء عشوائية.
+- **قاعدة البيانات PostgreSQL على Supabase** (المتغير `DATABASE_URL`)، والملفات المرفوعة في **Supabase Storage** (حاوية خاصة `uploads`) بأسماء عشوائية — دليل الإعداد: `docs/SUPABASE.md`.
+- بدون إعدادات Supabase يعمل محلياً بقاعدة PostgreSQL مدمجة (PGlite) في `data/pgdata` والملفات في `uploads/`.
+- كل طلب API معاملة واحدة (SERIALIZABLE): إمّا أن يكتمل كله أو لا يترك شيئاً.
 
 ### جداول قاعدة البيانات / Tables
 `users`, `courses`, `teams`, `research`, `submissions`, `research_grades`, `notes`, `notifications`, `sessions`.
@@ -68,8 +69,8 @@ npm start   # http://localhost:3000
 npm test    # اختبار شامل لكل حالات الاستخدام
 ```
 - حسابات تجريبية تُنشأ عند أول تشغيل (غيّرها!) — انظر `README.md`.
-- للنشر: `Dockerfile` جاهز، ويتطلب قرصاً دائماً على `/data` والمتغير `ADMIN_PASSWORD` — التفاصيل في `DEPLOY.md`.
-- لتصفير البيانات: أوقف الخادم واحذف `data/app.db` ومحتوى `uploads/`.
+- للنشر: `Dockerfile` و`render.yaml` جاهزان، مع Supabase تعمل خطة Render المجانية دون فقد البيانات — التفاصيل في `docs/SUPABASE.md` و`DEPLOY.md`.
+- لتصفير البيانات محلياً: أوقف الخادم واحذف `data/pgdata` ومحتوى `uploads/` (ولـ Supabase انظر `docs/SUPABASE.md`).
 
 ## 9. التوثيق / Documentation
 مجلد `docs/` فيه مخطط حالات الاستخدام، مخطط الأصناف، ومخططات التسلسل (SVG / PNG / PDF) مع سكربتات توليدها (`build_diagrams.py`, `build_sequence.py`).

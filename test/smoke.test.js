@@ -7,7 +7,7 @@ import { readdirSync } from 'node:fs';
 
 const dir = mkdtempSync(join(tmpdir(), 'pms-'));
 process.env.LOG = 'off';
-process.env.DB_PATH = join(dir, 't.db');
+process.env.DB_PATH = join(dir, 'pg');
 process.env.UPLOAD_DIR = join(dir, 'up');
 const { server } = await import('../server.js');
 await new Promise(r => server.listen(0, r));
@@ -158,3 +158,4 @@ assert.equal((await fetch(base + '/..%2fserver.js')).status, 404); ok('static + 
 
 console.log(`\nAll ${n} checks passed`);
 server.close();
+await (await import('../src/db.js')).db.close();

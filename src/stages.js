@@ -5,31 +5,31 @@ import { fail } from './errors.js';
 export const today = () => new Date().toISOString().slice(0, 10);
 export const STATE_LIST = ['scheduled', 'open', 'closed', 'postponed'];
 
-export function getStage(id) {
-  return db.prepare('SELECT * FROM stages WHERE id=?').get(id) ?? fail(404, 'Stage not found');
+export async function getStage(id) {
+  return (await db.prepare('SELECT * FROM stages WHERE id=?').get(id)) ?? fail(404, 'Stage not found');
 }
 // Supervisors manage only their own stages; admin may read all.
-export function ownStage(user, id) {
-  const s = getStage(id);
+export async function ownStage(user, id) {
+  const s = await getStage(id);
   return s.supervisor_id === user.id ? s : fail(403, 'Not your stage');
 }
 export const criteriaOf = stageId => db.prepare('SELECT id,name,max_score,position FROM stage_criteria WHERE stage_id=? ORDER BY position,id').all(stageId);
 
 // A stage "has started" once students can work on it or any work/grade exists; after that its setup is frozen.
-export function stageStarted(s) {
+export async function stageStarted(s) {
   if (s.state === 'closed') return true;
   if (s.state === 'open' && (!s.start_date || s.start_date <= today())) return true;
-  return !!db.prepare(`SELECT 1 WHERE EXISTS (SELECT 1 FROM stage_submissions WHERE stage_id=?)
+  return !!await db.prepare(`SELECT 1 WHERE EXISTS (SELECT 1 FROM stage_submissions WHERE stage_id=?)
     OR EXISTS (SELECT 1 FROM stage_grades WHERE stage_id=?)`).get(s.id, s.id);
 }
 export const phase = s => s.state === 'open' && s.start_date && s.start_date > today() ? 'upcoming' : s.state;
 
 export const formatsOf = s => s.allowed_formats.split(',').filter(Boolean);
-export const publicStage = s => ({
+export const publicStage = async s => ({
   id: s.id, course_id: s.course_id, position: s.position, name: s.name, description: s.description, instructions: s.instructions,
   start_date: s.start_date, deadline: s.deadline, max_grade: s.max_grade, formats: formatsOf(s), max_file_mb: s.max_file_mb,
   allow_resubmit: !!s.allow_resubmit, max_attempts: s.max_attempts, state: s.state, phase: phase(s), assign_all: !!s.assign_all,
-  grades_locked: !!s.grades_locked, allow_late: !!s.allow_late, started: stageStarted(s),
+  grades_locked: !!s.grades_locked, allow_late: !!s.allow_late, started: await stageStarted(s),
 });
 
 const TARGET_SQL = `SELECT st.id AS stage_id, st.name AS stage_name, st.deadline, st.max_grade, st.state, st.start_date, st.position, st.course_id, st.supervisor_id,
@@ -65,8 +65,8 @@ export function displayStatus(row) {
   return 'not_started';
 }
 // where: SQL condition on the aliases above (st, t, r), e.g. 't.stage_id=?'
-export function targets(where, ...args) {
-  return db.prepare(`${TARGET_SQL} WHERE ${where} ORDER BY st.position, st.id, r.id`).all(...args).map(decorate);
+export async function targets(where, ...args) {
+  return (await db.prepare(`${TARGET_SQL} WHERE ${where} ORDER BY st.position, st.id, r.id`).all(...args)).map(decorate);
 }
 
 // May this research submit (another) attempt for the stage now? Returns an English reason when not.
@@ -89,30 +89,30 @@ export const attemptsLeft = (stage, row) => {
 };
 
 // Assign a stage to a research (idempotent). Only approved research of the same supervisor and course.
-export function assign(stage, researchId) {
-  const r = db.prepare('SELECT * FROM research WHERE id=?').get(researchId) ?? fail(404, 'Research not found');
+export async function assign(stage, researchId) {
+  const r = (await db.prepare('SELECT * FROM research WHERE id=?').get(researchId)) ?? fail(404, 'Research not found');
   if (r.supervisor_id !== stage.supervisor_id) fail(403, 'Not your research');
   if (r.course_id !== stage.course_id) fail(400, 'Research belongs to another course');
   if (r.status !== 'approved') fail(409, 'Only approved research can be assigned to a stage');
-  const res = db.prepare('INSERT OR IGNORE INTO stage_targets (stage_id,research_id) VALUES (?,?)').run(stage.id, r.id);
+  const res = await db.prepare('INSERT INTO stage_targets (stage_id,research_id) VALUES (?,?) ON CONFLICT DO NOTHING').run(stage.id, r.id);
   return { research: r, added: res.changes > 0 };
 }
 // When a research gets approved, attach every "assign to all" stage of its supervisor/course.
-export function autoAssign(research) {
-  for (const s of db.prepare('SELECT * FROM stages WHERE supervisor_id=? AND course_id=? AND assign_all=1').all(research.supervisor_id, research.course_id))
-    db.prepare('INSERT OR IGNORE INTO stage_targets (stage_id,research_id) VALUES (?,?)').run(s.id, research.id);
+export async function autoAssign(research) {
+  for (const s of await db.prepare('SELECT * FROM stages WHERE supervisor_id=? AND course_id=? AND assign_all=1').all(research.supervisor_id, research.course_id))
+    await db.prepare('INSERT INTO stage_targets (stage_id,research_id) VALUES (?,?) ON CONFLICT DO NOTHING').run(s.id, research.id);
 }
 
 // Totals across a research's assigned stages.
 // publishedOnly: what a student may see (only published grades count).
-export function stageTotals(researchId, publishedOnly = false) {
-  const t = db.prepare(`SELECT COUNT(*) AS stages, COALESCE(SUM(st.max_grade),0) AS total_max,
+export async function stageTotals(researchId, publishedOnly = false) {
+  const t = await db.prepare(`SELECT COUNT(*) AS stages, COALESCE(SUM(st.max_grade),0) AS total_max,
       COALESCE(SUM(g.score),0) AS earned, COALESCE(SUM(CASE WHEN g.score IS NOT NULL THEN st.max_grade END),0) AS graded_max,
-      SUM(g.score IS NOT NULL) AS graded
+      COUNT(g.score) AS graded
     FROM stage_targets t JOIN stages st ON st.id=t.stage_id
-    LEFT JOIN stage_grades g ON g.stage_id=t.stage_id AND g.research_id=t.research_id AND (? OR g.published=1) WHERE t.research_id=?`).get(publishedOnly ? 0 : 1, researchId);
-  const approved = db.prepare(`SELECT COUNT(*) AS n FROM stage_targets t WHERE t.research_id=? AND
-    (SELECT status FROM stage_submissions x WHERE x.stage_id=t.stage_id AND x.research_id=t.research_id ORDER BY attempt_no DESC LIMIT 1)='approved'`).get(researchId).n;
+    LEFT JOIN stage_grades g ON g.stage_id=t.stage_id AND g.research_id=t.research_id AND (?::int=1 OR g.published=1) WHERE t.research_id=?`).get(publishedOnly ? 0 : 1, researchId);
+  const approved = (await db.prepare(`SELECT COUNT(*) AS n FROM stage_targets t WHERE t.research_id=? AND
+    (SELECT status FROM stage_submissions x WHERE x.stage_id=t.stage_id AND x.research_id=t.research_id ORDER BY attempt_no DESC LIMIT 1)='approved'`).get(researchId)).n;
   return { stages: t.stages, approved, graded: t.graded ?? 0, earned: t.earned, graded_max: t.graded_max, total_max: t.total_max,
     percent: t.total_max ? Math.round(t.earned / t.total_max * 1000) / 10 : null };
 }

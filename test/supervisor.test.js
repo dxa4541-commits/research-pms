@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 
 const dir = mkdtempSync(join(tmpdir(), 'pms-sup-'));
 process.env.LOG = 'off';
-process.env.DB_PATH = join(dir, 't.db');
+process.env.DB_PATH = join(dir, 'pg');
 process.env.UPLOAD_DIR = join(dir, 'up');
 const { server } = await import('../server.js');
 const { db } = await import('../src/db.js');
@@ -154,7 +154,7 @@ sv = (await call('GET', `/research/${t1}/stages`, null, stu1)).body.stages.find(
 assert.equal(sv.status, 'changes_requested'); assert.equal(sv.can_submit, true); assert.equal(sv.submissions[0].reviews[0].comment, 'Add 5 more papers'); ok('student sees feedback and may resubmit');
 let a2 = (await is(sub(stu1, st1, t1, 'two.pdf', pdf), 200, 'student resubmits')).body;
 assert.equal(a2.attempt, 2); assert.ok((await keys(doc)).includes('n.stage.resubmitted')); ok('supervisor notified of the resubmission');
-const attempts = db.prepare('SELECT attempt_no,filename FROM stage_submissions WHERE stage_id=? AND research_id=? ORDER BY attempt_no').all(st1, t1);
+const attempts = (await db.prepare('SELECT attempt_no,filename FROM stage_submissions WHERE stage_id=? AND research_id=? ORDER BY attempt_no').all(st1, t1));
 assert.deepEqual(attempts.map(a => a.filename), ['one.pdf', 'two.pdf']); ok('earlier attempts are preserved (never overwritten)');
 await is(call('GET', `/stage-submissions/${sub1}/file`, null, doc), 200, 'old attempt is still downloadable');
 await is(review(doc, sub1, { decision: 'approve' }), 409, 'only the latest attempt can be decided');
@@ -208,7 +208,7 @@ assert.equal(hist.find(h => h.action === 'stage.grade_updated').detail.from, 90)
 await is(call('GET', `/research/${t1}/history`, null, stu1), 403, 'students cannot read the history');
 await is(call('GET', `/research/${t1}/history`, null, doc2), 403, "other supervisors cannot read my history");
 await is(call('DELETE', `/stage-submissions/${sub1}`, null, doc), 404, 'there is no way to delete a submission');
-assert.equal(db.prepare('SELECT COUNT(*) AS n FROM stage_submissions WHERE research_id=?').get(t1).n, 3); ok('all three attempts still stored');
+assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM stage_submissions WHERE research_id=?').get(t1)).n, 3); ok('all three attempts still stored');
 
 // ---------- Late / deadlines / postpone ----------
 const st4 = (await is(mk({ name: 'Overdue stage', startDate: day(-10), deadline: day(-1), state: 'open', researchIds: [t4] }), 200, 'stage with a deadline in the past')).body.id;
@@ -218,11 +218,11 @@ assert.equal(la.late, true); assert.ok((await keys(doc)).includes('n.stage.late_
 const row = (await call('GET', `/stages/${st4}`, null, doc)).body.targets[0]; assert.equal(row.late, true); ok('late flag visible to the supervisor');
 const st6 = (await is(mk({ name: 'Missed stage', startDate: day(-10), deadline: day(-2), state: 'open', researchIds: [t1] }), 200, 'stage nobody submitted')).body.id;
 const before = (await keys(doc)).length;
-assert.ok(checkDeadlines() >= 2); ok('deadline watcher fires');
+assert.ok((await checkDeadlines()) >= 2); ok('deadline watcher fires');
 const k = await keys(doc);
 assert.ok(k.includes('n.deadline.late') && k.includes('n.deadline.soon')); ok('supervisor notified: submission late + deadline approaching');
 assert.ok((await keys(stu1)).includes('n.deadline.soon.own')); ok('students are warned too');
-assert.equal(checkDeadlines(), 0); ok('each warning fires only once');
+assert.equal((await checkDeadlines()), 0); ok('each warning fires only once');
 await is(call('PUT', `/stages/${st6}/state`, { state: 'postponed' }, doc), 400, 'postponing needs a new date');
 await is(call('PUT', `/stages/${st6}/state`, { state: 'postponed', deadline: day(7) }, doc), 200, 'postpone a stage with a new deadline');
 assert.ok((await keys(stu1)).includes('n.stage.deadline')); ok('students notified of the deadline change');
@@ -302,3 +302,4 @@ await is(call('GET', '/messages/threads', null, admin), 403, 'admin cannot list 
 
 console.log(`\nAll ${n} supervisor checks passed`);
 server.close();
+await (await import('../src/db.js')).db.close();
