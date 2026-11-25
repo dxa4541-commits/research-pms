@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { join, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { db } from './src/db.js';
+import { storage } from './src/storage.js';
 import { handlers, authenticate, HttpError, MAX_FILE_BYTES } from './src/controller.js';
 import { cleanup } from './src/controllers/auth.js';
 import { checkDeadlines } from './src/deadlines.js';
@@ -162,7 +163,7 @@ async function api(req, res, url) {
     const route = routes.find(r => r.method === req.method && r.re.test(url.pathname));
     if (!route) throw new HttpError(404, 'Not found');
     const token = (req.headers.authorization ?? '').replace(/^Bearer /, '') || null;
-    const user = route.roles === null ? null : authenticate(token);
+    const user = route.roles === null ? null : await authenticate(token);
     if (route.roles !== null) {
       if (!user) throw new HttpError(401, 'Please log in');
       if (user.must_change_password && !['changePassword', 'me', 'logout'].includes(route.handler)) throw new HttpError(403, 'You must change your initial password first');
@@ -170,7 +171,8 @@ async function api(req, res, url) {
     }
     const params = url.pathname.match(route.re).groups ?? {};
     const body = ['POST', 'PUT', 'PATCH'].includes(req.method) ? await readBody(req) : {};
-    const out = handlers[route.handler]({ user, token, params, body, query: url.searchParams, ip: clientIp(req) });
+    // One database transaction per request: a request either completes entirely or leaves nothing behind.
+    const out = await db.tx(() => handlers[route.handler]({ user, token, params, body, query: url.searchParams, ip: clientIp(req) }));
     if (out?.file) {
       return send(res, 200, out.file, {
         'Content-Type': out.contentType ?? 'application/octet-stream',
@@ -205,10 +207,10 @@ export const server = http.createServer((req, res) => {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT) || 3000;
-  server.listen(port, () => console.log(`Research PMS running at http://localhost:${port}`));
+  server.listen(port, () => console.log(`Research PMS running at http://localhost:${port} (database: ${db.kind === 'postgres' ? 'PostgreSQL / Supabase' : 'local PGlite'}, files: ${storage.kind === 'supabase' ? `Supabase Storage bucket "${storage.bucket}"` : 'local folder'})`));
   // Hourly housekeeping: expired sessions + deadline reminders (does not keep the process alive).
-  const tick = () => { try { cleanup(); checkDeadlines(); } catch (e) { console.error('Housekeeping failed:', e.message); } };
+  const tick = () => db.tx(async () => { await cleanup(); await checkDeadlines(); }).catch(e => console.error('Housekeeping failed:', e.message));
   tick(); setInterval(tick, 3600 * 1000).unref();
-  const stop = () => { server.close(() => { db.close(); process.exit(0); }); setTimeout(() => process.exit(1), 5000).unref(); };
+  const stop = () => { server.close(() => db.close().finally(() => process.exit(0))); setTimeout(() => process.exit(1), 5000).unref(); };
   process.on('SIGTERM', stop); process.on('SIGINT', stop);
 }

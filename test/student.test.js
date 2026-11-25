@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 
 const dir = mkdtempSync(join(tmpdir(), 'pms-stu-'));
 process.env.LOG = 'off';
-process.env.DB_PATH = join(dir, 't.db');
+process.env.DB_PATH = join(dir, 'pg');
 process.env.UPLOAD_DIR = join(dir, 'up');
 const { server } = await import('../server.js');
 const { db } = await import('../src/db.js');
@@ -73,7 +73,7 @@ await is(call('GET', '/research', null, omar), 200, 'access after changing the p
 assert.equal((await call('POST', '/login', { email: '20240003', password: '20240003' })).status, 401); ok('the initial password stops working');
 const omar2 = await login('20240003', 'omar-secret-1'); assert.ok(omar2); ok('the new password works');
 assert.ok((await keys(omar2)).includes('n.registration.approved')); ok('approval notification waiting for the student');
-const row = db.prepare('SELECT password_hash FROM users WHERE university_id=?').get('20240003');
+const row = (await db.prepare('SELECT password_hash FROM users WHERE university_id=?').get('20240003'));
 assert.ok(/^[0-9a-f]{32}:[0-9a-f]{128}$/.test(row.password_hash)); ok('password stored as a salted scrypt hash');
 for (let i = 0; i < 6; i++) await call('POST', '/login', { email: '20240001', password: 'wrong' });
 await is(call('POST', '/login', { email: '20240001', password: 'student123' }), 429, 'brute force on a student account is rate limited');
@@ -81,14 +81,14 @@ await is(call('POST', '/login', { email: '20240001', password: 'student123' }), 
 // =============== 2. Available students & course settings ===============
 const A = await login('20240002', 'student123');           // Lina — will be a team leader
 const B = omar2;                                            // Omar
-db.prepare("UPDATE users SET must_change_password=0").run();
-const idOf = id => db.prepare('SELECT id FROM users WHERE university_id=?').get(id).id;
+(await db.prepare("UPDATE users SET must_change_password=0").run());
+const idOf = async id => (await db.prepare('SELECT id FROM users WHERE university_id=?').get(id)).id;
 // more students (admin-created with their ID as initial password) and one NOT enrolled in the course
-const mkStu = async (uid, courses = [course.id]) => { await call('POST', '/users', { name: 'S' + uid, universityId: uid, role: 'student', courseIds: courses }, admin); db.prepare('UPDATE users SET must_change_password=0, password_hash=(SELECT password_hash FROM users WHERE university_id=?) WHERE university_id=?').run('20240003', uid); return null; };
+const mkStu = async (uid, courses = [course.id]) => { await call('POST', '/users', { name: 'S' + uid, universityId: uid, role: 'student', courseIds: courses }, admin); (await db.prepare('UPDATE users SET must_change_password=0, password_hash=(SELECT password_hash FROM users WHERE university_id=?) WHERE university_id=?').run('20240003', uid)); return null; };
 // every created student gets the same hash as Omar => password 'omar-secret-1'
 for (const id of ['S10001', 'S10002', 'S10003', 'S10004']) await mkStu(id);
 await call('POST', '/users', { name: 'Outsider', universityId: 'S90000', role: 'student', courseIds: [course2.id] }, admin);
-db.prepare('UPDATE users SET must_change_password=0, password_hash=(SELECT password_hash FROM users WHERE university_id=?) WHERE university_id=?').run('20240003', 'S90000');
+(await db.prepare('UPDATE users SET must_change_password=0, password_hash=(SELECT password_hash FROM users WHERE university_id=?) WHERE university_id=?').run('20240003', 'S90000'));
 const tok = id => login(id, 'omar-secret-1');
 const [S1, S2, S3, S4, OUT] = [await tok('S10001'), await tok('S10002'), await tok('S10003'), await tok('S10004'), await tok('S90000')];
 assert.ok(S1 && OUT); ok('admin-created students log in with their ID (initial password flow)');
@@ -147,7 +147,7 @@ const i3 = (await is(inv(A, t1, 'S10001'), 200, 're-invite after a rejection')).
 await is(call('POST', `/invitations/${i3}/cancel`, {}, B), 403, 'a member cannot cancel invitations');
 await is(call('POST', `/invitations/${i3}/cancel`, {}, A), 200, 'leader cancels a pending invitation');
 await is(call('POST', `/invitations/${i3}/respond`, { accept: true }, S1), 409, 'cancelled invitation cannot be accepted');
-const st = db.prepare('SELECT status FROM team_invitations ORDER BY id').all().map(x => x.status);
+const st = (await db.prepare('SELECT status FROM team_invitations ORDER BY id').all()).map(x => x.status);
 assert.deepEqual(st, ['accepted', 'rejected', 'cancelled']); ok('invitation statuses: accepted / rejected / cancelled');
 // size limit: max is 3 → third member fits, a fourth does not
 const i4 = (await inv(A, t1, 'S10002')).body.id; await call('POST', `/invitations/${i4}/respond`, { accept: true }, S2);
@@ -177,7 +177,7 @@ await is(call('POST', `/join-requests/${j2}/cancel`, {}, S4), 403, "cannot cance
 await is(call('POST', `/join-requests/${j2}/cancel`, {}, S3), 200, 'requester cancels');
 const j3 = (await call('POST', `/teams/${t1}/join-requests`, {}, S3)).body.id;
 await is(call('POST', `/join-requests/${j3}/respond`, { accept: true }, A), 200, 'leader accepts');
-assert.deepEqual(db.prepare('SELECT status FROM join_requests ORDER BY id').all().map(x => x.status), ['rejected', 'cancelled', 'accepted']); ok('join request statuses tracked');
+assert.deepEqual((await db.prepare('SELECT status FROM join_requests ORDER BY id').all()).map(x => x.status), ['rejected', 'cancelled', 'accepted']); ok('join request statuses tracked');
 assert.ok((await keys(S3)).includes('n.join.accepted') && (await keys(B)).includes('n.team.member_joined')); ok('requester and members notified');
 await is(call('POST', `/teams/${t1}/join-requests`, {}, S4), 409, 'a team at maximum capacity refuses requests');
 await call('PUT', `/my/teams/${t1}`, { accepting: false }, A);
@@ -198,20 +198,20 @@ assert.equal((await call('GET', '/my/teams', null, A)).body[0].size, 5); ok('fiv
 await is(call('PUT', `/my/teams/${t1}`, { name: 'Hacked' }, B), 403, 'member cannot edit the team');
 await is(call('PUT', `/my/teams/${t1}`, { name: 'Alpha Team' }, A), 200, 'leader edits the team name');
 await is(call('DELETE', `/my/teams/${t1}`, null, B), 403, 'member cannot delete the team');
-await is(call('DELETE', `/teams/${t1}/members/${idOf('S10004')}`, null, B), 403, 'member cannot remove members');
-await is(call('DELETE', `/teams/${t1}/members/${idOf('20240002')}`, null, A), 400, 'leader cannot remove themselves');
-await is(call('DELETE', `/teams/${t1}/members/${idOf('S10004')}`, null, A), 200, 'leader removes a member (team not locked)');
+await is(call('DELETE', `/teams/${t1}/members/${(await idOf('S10004'))}`, null, B), 403, 'member cannot remove members');
+await is(call('DELETE', `/teams/${t1}/members/${(await idOf('20240002'))}`, null, A), 400, 'leader cannot remove themselves');
+await is(call('DELETE', `/teams/${t1}/members/${(await idOf('S10004'))}`, null, A), 200, 'leader removes a member (team not locked)');
 assert.ok((await keys(S4)).includes('n.team.removed') && (await keys(B)).includes('n.team.member_left')); ok('removed member and team notified');
 await is(avail(OUT, course2.id), 200, 'sanity: other course listing works for its students');
 assert.ok((await avail(S1)).body.some(s => s.name === 'SS10004')); ok('a removed member is available again');
-await is(call('PUT', `/teams/${t1}/leader`, { userId: idOf('S10002') }, B), 403, 'member cannot change the leader');
+await is(call('PUT', `/teams/${t1}/leader`, { userId: (await idOf('S10002')) }, B), 403, 'member cannot change the leader');
 await is(call('POST', `/teams/${t1}/leave`, {}, A), 409, 'leader must hand over leadership before leaving');
 await is(call('POST', `/teams/${t1}/leave`, {}, S3), 200, 'member leaves an unlocked team');
 await is(call('POST', `/teams/${t1}/invitations`, { universityId: 'S10003' }, A), 200, 're-invite the student who left');
-await call('POST', '/invitations/' + db.prepare('SELECT MAX(id) AS i FROM team_invitations').get().i + '/respond', { accept: true }, S3);
-await is(call('PUT', `/teams/${t1}/leader`, { userId: idOf('20240003') }, A), 200, 'leader hands over leadership');
+await call('POST', '/invitations/' + (await db.prepare('SELECT MAX(id) AS i FROM team_invitations').get()).i + '/respond', { accept: true }, S3);
+await is(call('PUT', `/teams/${t1}/leader`, { userId: (await idOf('20240003')) }, A), 200, 'leader hands over leadership');
 await is(call('PUT', `/my/teams/${t1}`, { name: 'Again' }, A), 403, 'the former leader no longer has leader permissions');
-await is(call('PUT', `/teams/${t1}/leader`, { userId: idOf('20240002') }, B), 200, 'new leader hands it back');
+await is(call('PUT', `/teams/${t1}/leader`, { userId: (await idOf('20240002')) }, B), 200, 'new leader hands it back');
 const hist = (await call('GET', `/my/teams/${t1}/history`, null, B)).body.map(h => h.action);
 for (const a of ['created_as_leader', 'joined', 'left', 'removed', 'leader_changed', 'renamed']) assert.ok(hist.includes(a), 'history has ' + a);
 ok('membership history kept (joined / left / removed / leader changed / renamed)');
@@ -266,11 +266,11 @@ assert.equal(late.late, true); ok('flagged as late');
 await call('PUT', `/my/teams/${t1}`, { membersCanSubmit: true }, A);
 const sub1 = (await is(sub(B, sA), 200, 'a member can submit once the leader allows it')).body;
 assert.equal(sub1.late, false); ok('on time');
-const hist2 = db.prepare('SELECT submitted_by FROM stage_submissions WHERE stage_id=?').get(sA); assert.equal(hist2.submitted_by, idOf('20240003')); ok('who submitted is recorded');
+const hist2 = (await db.prepare('SELECT submitted_by FROM stage_submissions WHERE stage_id=?').get(sA)); assert.equal(hist2.submitted_by, (await idOf('20240003'))); ok('who submitted is recorded');
 ms = await mystages(S3); assert.equal(byName(ms, 'Proposal').display_status, 'submitted'); assert.equal(byName(ms, 'Proposal').submissions.length, 1); ok('all members see the submission history');
-await is(call('GET', `/stage-submissions/${db.prepare('SELECT id FROM stage_submissions WHERE stage_id=?').get(sA).id}/file`, null, S3), 200, 'members download their submissions');
-await is(call('GET', `/stage-submissions/${db.prepare('SELECT id FROM stage_submissions WHERE stage_id=?').get(sA).id}/file`, null, S1), 403, 'students of other teams cannot');
-const subA = db.prepare('SELECT id FROM stage_submissions WHERE stage_id=?').get(sA).id;
+await is(call('GET', `/stage-submissions/${(await db.prepare('SELECT id FROM stage_submissions WHERE stage_id=?').get(sA)).id}/file`, null, S3), 200, 'members download their submissions');
+await is(call('GET', `/stage-submissions/${(await db.prepare('SELECT id FROM stage_submissions WHERE stage_id=?').get(sA)).id}/file`, null, S1), 403, 'students of other teams cannot');
+const subA = (await db.prepare('SELECT id FROM stage_submissions WHERE stage_id=?').get(sA)).id;
 await call('POST', `/stage-submissions/${subA}/review`, { decision: 'comment', comment: 'Looking' }, doc);
 assert.equal(byName(await mystages(A), 'Proposal').display_status, 'under_review'); ok('status: Under Review');
 await is(call('POST', `/stage-submissions/${subA}/review`, { decision: 'request_changes', comment: 'Fix section 2' }, A), 403, 'students cannot review submissions');
@@ -281,7 +281,7 @@ await is(sub(A, sA, 'v2.pdf'), 200, 'resubmit after modifications');
 ms = await mystages(A); assert.equal(byName(ms, 'Proposal').display_status, 'resubmitted'); assert.equal(byName(ms, 'Proposal').submissions.length, 2); ok('status: Resubmitted; both attempts preserved');
 assert.equal(byName(ms, 'Strict').display_status, 'open'); ok('late-blocked stage still Open');
 // grades are hidden until published
-const subA2 = db.prepare('SELECT id FROM stage_submissions WHERE stage_id=? ORDER BY attempt_no DESC').get(sA).id;
+const subA2 = (await db.prepare('SELECT id FROM stage_submissions WHERE stage_id=? ORDER BY attempt_no DESC').get(sA)).id;
 await call('POST', `/stage-submissions/${subA2}/review`, { decision: 'approve' }, doc);
 assert.equal(byName(await mystages(A), 'Proposal').display_status, 'approved'); ok('status: Approved');
 await call('PUT', `/stages/${sA}/targets/${rid}/grade`, { score: 18, comment: 'Nice' }, doc);
@@ -301,12 +301,12 @@ assert.equal((await call('GET', `/research/${rid}/stages`, null, S1)).status, 40
 
 // =============== 9. Locked teams ===============
 assert.equal((await call('GET', '/my/teams', null, A)).body[0].locked, true); ok('team locks automatically once its stages started');
-await is(call('DELETE', `/teams/${t1}/members/${idOf('S10003')}`, null, A), 409, 'leader cannot remove members of a locked team');
+await is(call('DELETE', `/teams/${t1}/members/${(await idOf('S10003'))}`, null, A), 409, 'leader cannot remove members of a locked team');
 await is(call('POST', `/teams/${t1}/invitations`, { universityId: 'S10004' }, A), 409, 'cannot invite into a locked team');
 await is(call('POST', `/teams/${t1}/join-requests`, {}, S4), 409, 'locked teams refuse join requests');
-const cr = (await is(call('POST', `/teams/${t1}/change-requests`, { kind: 'remove', userId: idOf('S10003'), note: 'inactive' }, A), 200, 'leader asks the supervisor to remove a member')).body.id;
-await is(call('POST', `/teams/${t1}/change-requests`, { kind: 'remove', userId: idOf('S10003') }, A), 409, 'duplicate change request refused');
-await is(call('POST', `/teams/${t1}/change-requests`, { kind: 'remove', userId: idOf('S10003') }, B), 403, 'members cannot request removals');
+const cr = (await is(call('POST', `/teams/${t1}/change-requests`, { kind: 'remove', userId: (await idOf('S10003')), note: 'inactive' }, A), 200, 'leader asks the supervisor to remove a member')).body.id;
+await is(call('POST', `/teams/${t1}/change-requests`, { kind: 'remove', userId: (await idOf('S10003')) }, A), 409, 'duplicate change request refused');
+await is(call('POST', `/teams/${t1}/change-requests`, { kind: 'remove', userId: (await idOf('S10003')) }, B), 403, 'members cannot request removals');
 const lv = (await is(call('POST', `/teams/${t1}/leave`, {}, S2), 200, 'a member asks to leave a locked team')).body;
 assert.equal(lv.pending, true); ok('leaving a locked team needs approval');
 assert.ok((await keys(doc)).includes('n.change.request')); ok('supervisor notified of change requests');
@@ -348,7 +348,7 @@ for (const [m, p, b] of [['GET', '/supervisor/dashboard'], ['GET', '/registratio
 ok('students cannot reach supervisor/admin functions or global settings');
 await is(call('GET', '/research'), 401, 'unauthenticated requests are refused');
 // audit log
-const acts = db.prepare('SELECT DISTINCT action FROM audit_log').all().map(x => x.action);
+const acts = (await db.prepare('SELECT DISTINCT action FROM audit_log').all()).map(x => x.action);
 for (const a of ['registration.requested', 'registration.approved', 'registration.rejected', 'team.created', 'team.invited', 'team.invitation_accepted', 'team.join_requested', 'team.join_accepted', 'team.member_removed', 'team.change_requested', 'team.change_approved', 'stage.submitted', 'topic.registered', 'topic.edited'])
   assert.ok(acts.includes(a), 'audit has ' + a);
 ok('sensitive operations are in the audit log');
@@ -359,3 +359,4 @@ assert.equal(last.status, 429); ok('registration requests are rate limited');
 
 console.log(`\nAll ${n} student checks passed`);
 server.close();
+await (await import('../src/db.js')).db.close();

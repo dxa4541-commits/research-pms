@@ -1,7 +1,8 @@
 # Research Project Management System
 
 Web app built from the use-case and class diagrams (student / supervisor / admin).
-Zero dependencies — needs only Node.js 22.5+ (uses the built-in `node:sqlite`).
+Node.js 22.9+. Data lives in **Supabase** (PostgreSQL + Storage) — setup guide: [docs/SUPABASE.md](docs/SUPABASE.md) (بالعربية).
+Without Supabase settings it runs locally with an embedded PostgreSQL (PGlite), so `npm install && npm start` is all you need to try it.
 
 ## About the project / نبذة عن المشروع
 Research Project Management System lets students register research topics and upload versions of their work,
@@ -58,7 +59,7 @@ Approved University IDs for trying the registration flow (non-production): `2024
 - `server.js` — routing + role checks
 - `src/controller.js` + `src/controllers/` — controller (auth, research, review, admin, notifications)
 - `src/research.js`, `src/stages.js`, `src/messages.js`, `src/notifications.js`, `src/audit.js`, `src/deadlines.js`, `src/errors.js` — model helpers (stages, messaging, history, deadline watcher)
-- `src/db.js` — SQL repository (`data/app.db`); `src/files.js` — file store (`uploads/`) and Check file
+- `src/db.js` — PostgreSQL repository (Supabase via `DATABASE_URL`, else embedded PGlite in `data/pgdata`) + schema; `src/storage.js` — Supabase Storage (else `uploads/`); `src/files.js` — Check file and stored files
 
 ## Rules enforced
 - File check: allowed types pdf/doc/docx only (per requirements), ≤ 10 MB, content (magic bytes) must match the extension.
@@ -75,8 +76,9 @@ Approved University IDs for trying the registration flow (non-production): `2024
 - Security headers (CSP, X-Frame-Options, nosniff, no-referrer) and `Cache-Control: no-store` on the API.
 - `GET /api/research?status=&q=&limit=&offset=` — filter/search/page (max 500); total in `X-Total-Count`.
 - `POST /api/me/password` — change own password (other sessions are signed out).
-- No orphan files when a submission fails; concurrent version uploads return 409 instead of corrupting numbering.
-- SQLite in WAL mode with a busy timeout; expired sessions purged hourly; request logging (`LOG=off` to silence); graceful shutdown on SIGTERM/SIGINT.
+- Every API request is one `SERIALIZABLE` transaction (retried on conflicts): a failed request leaves no rows and no uploaded files behind, and concurrent uploads get distinct version numbers.
+- Row level security on every table (Supabase's public REST API cannot read them); expired sessions purged hourly; request logging (`LOG=off` to silence); graceful shutdown on SIGTERM/SIGINT.
 
 ## Reset data
-Stop the server and delete `data/app.db` and the files in `uploads/`; demo data is re-created on next start.
+Local (no Supabase): stop the server and delete `data/pgdata` and `uploads/`; demo data is re-created on next start.
+Supabase: see «تصفير البيانات» in [docs/SUPABASE.md](docs/SUPABASE.md).

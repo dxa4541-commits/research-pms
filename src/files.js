@@ -1,12 +1,9 @@
 // File store + «Check file (size & type)» — the Filestore of the class diagram.
-import { mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { db } from './db.js';
 import { fail } from './errors.js';
+import { storage } from './storage.js';
 
-export const UPLOAD_DIR = process.env.UPLOAD_DIR || 'uploads';
-mkdirSync(UPLOAD_DIR, { recursive: true });
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
 // ---------- Check file (size & type) — «include» of Upload new version ----------
@@ -33,35 +30,35 @@ export function checkFile(filename, base64, { formats = DEFAULT_FORMATS, maxByte
   return { buf, ext };
 }
 
-// Writes the file under a random name. The caller inserts the row and calls removeFile(path) if that fails.
-export function storeFile(filename, buf) {
+// Stores the file under a random name. If the surrounding transaction rolls back, the file is removed again.
+export async function storeFile(filename, buf) {
   const stored = `${randomUUID()}.bin`;
-  const path = join(UPLOAD_DIR, stored);
-  saveFile(path, buf);
-  return { stored, path, safeName: filename.replace(/[^\w.\- ]+/g, '_').slice(0, 120) };
+  await storage.put(stored, buf);
+  db.onRollback(() => storage.remove(stored));
+  return { stored, path: stored, safeName: filename.replace(/[^\w.\- ]+/g, '_').slice(0, 120) };
 }
 
 // Sequence diagram steps 4-5: create(versionNo + 1) the submission, then saveFile(file).
-export function createSubmission(researchId, versionNo, filename, buf) {
-  const stored = `${randomUUID()}.bin`;
-  const path = join(UPLOAD_DIR, stored);
+export async function createSubmission(researchId, versionNo, filename, buf) {
   const safeName = filename.replace(/[^\w.\- ]+/g, '_').slice(0, 120);
+  const stored = `${randomUUID()}.bin`;
   let id;
   try {
-    id = Number(db.prepare(
+    id = (await db.prepare(
       'INSERT INTO submissions (research_id,version_no,filename,stored_name,size) VALUES (?,?,?,?,?)')
-      .run(researchId, versionNo, safeName, stored, buf.length).lastInsertRowid);
+      .run(researchId, versionNo, safeName, stored, buf.length)).lastInsertRowid;
   } catch (e) {
     if (/UNIQUE/.test(e.message)) fail(409, 'Another version was uploaded at the same time; please retry');
     throw e;
   }
-  try { saveFile(path, buf); }
-  catch (e) { db.prepare('DELETE FROM submissions WHERE id=?').run(id); removeFile(path); throw e; } // never leave a row without a file
-  return { id, path };
+  await storage.put(stored, buf);                 // a failure here rolls the row back with the request's transaction
+  db.onRollback(() => storage.remove(stored));
+  return { id, path: stored };
 }
-const saveFile = (path, buf) => writeFileSync(path, buf);
+
+// Contents of a stored file (404 when it is gone).
+export async function readStored(name) {
+  return (await storage.get(name)) ?? fail(404, 'File missing from storage');
+}
 // Best-effort cleanup: a file that is already gone is fine, any other failure is reported.
-export const removeFile = p => {
-  try { unlinkSync(p); }
-  catch (e) { if (e.code !== 'ENOENT') console.error('Could not remove file', p, e.message); }
-};
+export const removeFile = name => storage.remove(name).catch(e => console.error('Could not remove file', name, e.message));
