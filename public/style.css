@@ -62,7 +62,9 @@ input::placeholder,textarea::placeholder{color:#94a3b8}
 input:hover,select:hover,textarea:hover{border-color:#94a3b8}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px color-mix(in srgb,var(--teal) 22%,transparent)}
 input[type=checkbox],input[type=radio]{width:18px;min-height:18px;height:18px;padding:0;accent-color:var(--teal)}
-input[type=date],input[type=number]{width:auto}input[type=file]{padding:7px}
+input[type=date],input[type=number]{width:auto}
+/* Dates and numbers are always shown left-to-right in English (dd/mm/yyyy), also inside the Arabic (RTL) interface */
+input[type=date],input[type=number]{direction:ltr;text-align:start;unicode-bidi:plain-text}input[type=file]{padding:7px}
 textarea{min-height:88px;resize:vertical}
 .hint{font-size:.82rem;color:var(--mute);margin-top:4px}
 .field-row{display:flex;gap:12px;flex-wrap:wrap}.field-row>div{flex:1 1 180px}
