@@ -76,7 +76,8 @@ async function renderStageForm(view) {
     <label>${t('formats')}</label><div class="row">${FORMATS.map(f => `<label class="inl"><input type="checkbox" data-fmt="${f}" ${(s?.formats ?? ['pdf', 'doc', 'docx']).includes(f) ? 'checked' : ''}> .${f}</label>`).join('')}</div>
     <div class="row"><div><label for="mb">${t('maxFileMb')}</label><input type="number" id="mb" min="0.1" max="10" step="0.1" style="width:120px" value="${s?.max_file_mb ?? 10}"></div>
       <div><label for="ma">${t('maxAttempts')}</label><input type="number" id="ma" min="1" max="20" style="width:120px" value="${s?.max_attempts ?? ''}"></div>
-      <label class="inl" style="margin-top:22px"><input type="checkbox" id="rs" ${s?.allow_resubmit ?? true ? 'checked' : ''}> ${t('allowResubmit')}</label></div>
+      <label class="inl" style="margin-top:22px"><input type="checkbox" id="rs" ${s?.allow_resubmit ?? true ? 'checked' : ''}> ${t('allowResubmit')}</label>
+      <label class="inl" style="margin-top:22px"><input type="checkbox" id="al" ${s?.allow_late ?? true ? 'checked' : ''}> ${t('allowLate')}</label></div>
     <label>${t('rubric')}</label><p class="small mute">${t('rubricHint')}</p><div id="crits"></div>
     <div class="row"><button type="button" class="ghost" id="addc">${t('addCriterion')}</button><button type="button" class="ghost" id="defc">${t('defaultRubric')}</button></div>
     <label class="inl" style="margin-top:12px"><input type="checkbox" id="aa" ${s?.assign_all ? 'checked' : ''}> ${t('assignAll')}</label>
@@ -108,7 +109,7 @@ async function renderStageForm(view) {
     const body = {
       name: $('#n').value, description: $('#d').value, instructions: $('#i').value, startDate: $('#sd').value || null, deadline: $('#dl').value || null,
       maxGrade: $('#mg').value, formats: [...view.querySelectorAll('[data-fmt]:checked')].map(i => i.dataset.fmt), maxFileMb: $('#mb').value,
-      maxAttempts: $('#ma').value || null, allowResubmit: $('#rs').checked, assignAll: $('#aa').checked,
+      maxAttempts: $('#ma').value || null, allowResubmit: $('#rs').checked, allowLate: $('#al').checked, assignAll: $('#aa').checked,
       criteria: rows.filter(r => r.name.trim()).map(r => ({ name: r.name, max: r.max })),
     };
     if (s) await api('PUT', `/stages/${s.id}`, body);
@@ -136,7 +137,7 @@ async function renderStageDetail(view, id) {
       ${d.criteria.length ? `<p class="small mute">${t('rubric')}: ${d.criteria.map(c => `${esc(c.name)} (${num(c.max_score)})`).join(' · ')}</p>` : ''}
       ${s.started ? `<p class="small mute">${t('editLocked')}</p>` : ''}
       <div class="row">${s.state !== 'open' ? `<button class="ok" data-st="open">${s.state === 'closed' ? t('reopen') : t('open')}</button>` : ''}${s.state !== 'closed' ? `<button class="ghost" data-st="closed">${t('close')}</button>` : ''}
-        <button class="ghost" id="pp">${t('postpone')}</button><button class="ghost" id="lk">${s.grades_locked ? t('unlockGrades') : t('lockGrades')}</button>
+        <button class="ghost" id="pp">${t('postpone')}</button><button class="ghost" id="pa">${t('publishAll')}</button><button class="ghost" id="lk">${s.grades_locked ? t('unlockGrades') : t('lockGrades')}</button>
         ${s.started ? '' : `<button class="ghost" id="ed">${t('edit')}</button>`}<button class="ghost" id="hs">${t('showHistory')}</button></div>
       <div class="row" id="ppbox" hidden style="margin-top:8px"><label class="inl">${t('startDate')} <input type="date" id="pps" value="${s.start_date ?? ''}"></label>
         <label class="inl">${t('newDeadline')} <input type="date" id="ppd" value="${s.deadline ?? ''}"></label><button id="ppgo">${t('postpone')}</button></div></div>
@@ -156,6 +157,7 @@ async function renderStageDetail(view, id) {
   $('#pp').onclick = () => { $('#ppbox').hidden = !$('#ppbox').hidden; };
   $('#ppgo').onclick = setState('postponed', true);
 
+  $('#pa').onclick = act(async () => { await api('PUT', `/stages/${id}/publish`, { published: true }); render(); }, 'toast.gradeStage');
   $('#lk').onclick = act(async () => { await api('PUT', `/stages/${id}/grades-lock`, { locked: !s.grades_locked }); render(); }, 'toast.lock');
   if ($('#ed')) $('#ed').onclick = () => { state.openStageId = null; state.stageForm = { id }; render(); };
   $('#hs').onclick = act(async () => {

@@ -19,7 +19,7 @@ export async function renderResearchList(view) {
 export async function renderDetail(view, id) {
   const r = await api('GET', `/research/${id}`);
   const role = state.user.role;
-  const canEdit = role === 'student' && r.status !== 'rejected';
+  const canEdit = role === 'student' && r.status !== 'rejected' && r.is_leader;
   const overdue = r.deadline && r.deadline < new Date().toISOString().slice(0, 10) && ['pending', 'changes_requested'].includes(r.status);
   view.innerHTML = `<p><button class="ghost" id="back">${t('back')}</button></p>
     <div class="card"><div class="row"><h2 class="grow" style="margin:0">${esc(r.title)}</h2>${badge(r.status)}
@@ -27,16 +27,24 @@ export async function renderDetail(view, id) {
       <p class="small mute">${t('student')}: ${esc(r.student)} · ${t('supervisor')}: ${esc(r.supervisor)} · ${t('course')}: ${esc(r.course)}${r.team ? ' · ' + t('team') + ': ' + esc(r.team) : ''}
       ${r.deadline ? ` · ${t('deadline')}: ${fmtDay(r.deadline)}${dueBadge({ overdue })}` : ''}</p>
       ${r.description ? `<p>${esc(r.description)}</p>` : ''}
+      ${r.problem ? `<p class="small"><b>${t('problemL')}:</b> ${esc(r.problem)}</p>` : ''}${r.objectives ? `<p class="small"><b>${t('objectivesL')}:</b> ${esc(r.objectives)}</p>` : ''}
       ${r.status === 'rejected' && r.rejection_reason ? `<p class="small"><b class="overdue">${t('rejectionReason')}:</b> ${esc(r.rejection_reason)}</p>` : ''}
       ${role === 'supervisor' ? `<label for="cm">${t('comment')}</label><textarea id="cm"></textarea>
         <div class="row"><button class="ok" data-d="approve">${t('approve')}</button><button class="warn" data-d="request_changes">${t('requestChanges')}</button>
         <button class="bad" data-d="reject">${t('reject')}</button></div><p class="small mute">${t('rejectHint')}</p>` : ''}
       ${r.status === 'changes_requested' && role === 'student' ? `<p class="small"><b>${t('changesBanner')}</b></p>` : ''}
     </div>
+    ${r.topic_reviews?.length ? `<div class="card"><h3>${t('topicFeedbackL')}</h3>${r.topic_reviews.map(v => `<div class="note"><span class="small mute">${esc(v.reviewer)} · ${fmtDate(v.created_at)} · ${t('st.' + v.decision)}</span>${v.comment ? '<br>' + esc(v.comment) : ''}</div>`).join('')}</div>` : ''}
+    ${r.can_edit_topic ? `<div class="card"><h3>${t('editTopic')}</h3><form id="tf"><label for="tt">${t('title')}</label><input id="tt" required maxlength="200" value="${esc(r.title)}">
+      <label for="td">${t('description')}</label><textarea id="td" maxlength="2000">${esc(r.description ?? '')}</textarea><label for="tp">${t('problemL')}</label><textarea id="tp" maxlength="2000">${esc(r.problem ?? '')}</textarea>
+      <label for="to">${t('objectivesL')}</label><textarea id="to" maxlength="2000">${esc(r.objectives ?? '')}</textarea><p><button>${t('resubmitTopic')}</button></p></form></div>` : ''}
+    ${role === 'student' && r.status === 'approved' ? `<p class="small mute">${t('approvedFrozen')}</p>` : ''}
     ${r.status === 'approved' || r.stage_totals.stages ? `<div class="card"><h3>${t('stagesTitle')}</h3><div id="stg"></div></div>` : ''}
     ${role === 'supervisor' ? `<div class="card"><h3>${t('finalGrade')}</h3>${r.stage_totals.stages ? `<p class="small mute">${t('calcTotal', { earned: r.stage_totals.earned, max: r.stage_totals.total_max, pct: r.stage_totals.percent ?? 0 })}</p>` : ''}
       <div class="row"><input type="number" min="0" max="100" step="0.5" placeholder="${t('score')}" style="width:110px" id="gs" value="${r.grade ?? ''}">
-        ${r.stage_totals.percent != null ? `<button class="ghost" id="gcalc">${t('useCalc')}</button>` : ''}<input class="grow" id="gcm" placeholder="${t('gradeComment')}" value="${esc(r.grade_comment ?? '')}"><button id="gb">${t('gradeBtn')}</button></div></div>` : ''}
+        ${r.stage_totals.percent != null ? `<button class="ghost" id="gcalc">${t('useCalc')}</button>` : ''}<input class="grow" id="gcm" placeholder="${t('gradeComment')}" value="${esc(r.grade_comment ?? '')}">
+        <label class="inl small"><input type="checkbox" id="gpub" ${r.grade_published ? 'checked' : ''}> ${t('saveAndPublish')}</label><button id="gb">${t('gradeBtn')}</button>
+        ${r.grade != null ? `<span class="badge ${r.grade_published ? 'approved' : 'closed'}">${r.grade_published ? t('published') : t('unpublished')}</span><button class="ghost" id="gpb">${r.grade_published ? t('hideGrade') : t('publishGrade')}</button>` : ''}</div></div>` : ''}
     ${canEdit ? `<div class="card"><h3>${t('uploadNew')}</h3><div class="row"><input class="grow" type="file" id="nv" accept=".pdf,.doc,.docx">
       <button id="up">${t('upload')}</button></div><p class="small mute">${t('fileHint')}</p></div>` : ''}
     <div class="card"><h3>${t('versionsFeedback')}</h3>${r.submissions.map(s => `
@@ -52,6 +60,11 @@ export async function renderDetail(view, id) {
     const h = await api('GET', `/research/${id}/history`);
     $('#hist').innerHTML = h.length ? `<table>${h.map(x => `<tr><td class="small mute">${fmtDate(x.created_at)}</td><td>${esc(x.actor ?? '—')}</td><td><code>${esc(x.action)}</code></td><td class="small mute">${esc(x.detail ? JSON.stringify(x.detail) : '')}</td></tr>`).join('')}</table>` : `<span class="mute">${t('noHistory')}</span>`;
   });
+  if ($('#gpb')) $('#gpb').onclick = act(async () => { await api('PUT', `/research/${id}/grade/publish`, { published: !r.grade_published }); render(); }, 'toast.grade');
+  if ($('#tf')) $('#tf').onsubmit = act(async e => {
+    e.preventDefault();
+    await api('PUT', `/research/${id}/topic`, { title: $('#tt').value, description: $('#td').value, problem: $('#tp').value, objectives: $('#to').value }); render();
+  }, 'toast.topic');
   if ($('#gcalc')) $('#gcalc').onclick = () => { $('#gs').value = Math.round(r.stage_totals.percent * 10) / 10; };
   $('#back').onclick = () => { state.openId = null; render(); };
   view.querySelectorAll('[data-dl]').forEach(b => b.onclick = () => download(b.dataset.dl, b.dataset.name));
@@ -65,7 +78,7 @@ export async function renderDetail(view, id) {
     await api('POST', `/submissions/${b.dataset.addnote}/notes`, { text: view.querySelector(`[data-note="${b.dataset.addnote}"]`).value }); render();
   }, 'toast.note'));
   if ($('#gb')) $('#gb').onclick = act(async () => {
-    await api('PUT', `/research/${id}/grade`, { score: $('#gs').value, comment: $('#gcm').value }); render();
+    await api('PUT', `/research/${id}/grade`, { score: $('#gs').value, comment: $('#gcm').value, publish: $('#gpub').checked }); render();
   }, 'toast.grade');
   if ($('#up')) $('#up').onclick = act(async () => {
     const f = $('#nv').files[0]; if (!f) throw new Error(t('chooseFile'));
@@ -76,22 +89,32 @@ export async function renderDetail(view, id) {
   }, 'toast.version');
 }
 
-// ---------- Student: submit research ----------
+// ---------- Student: register a research topic (for my team, or individually) ----------
 export async function renderSubmit(view) {
-  const [courses, sups] = await Promise.all([api('GET', '/courses'), api('GET', '/supervisors')]);
+  const [courses, sups, teams] = await Promise.all([api('GET', '/courses'), api('GET', '/supervisors'), api('GET', '/my/teams')]);
+  if (!courses.length) { view.innerHTML = `<div class="card"><p class="mute">${t('noAssigned')}</p></div>`; return; }
   view.innerHTML = `<div class="card"><h2>${t('submitTitle')}</h2><form id="f">
+    <label for="c">${t('course')}</label><select id="c">${courseOpts(courses)}</select><p class="small" id="who"></p>
     <label for="t">${t('title')}</label><input id="t" required maxlength="200">
     <label for="ds">${t('description')}</label><textarea id="ds" maxlength="2000" placeholder="${t('descriptionPh')}"></textarea>
-    <label for="c">${t('course')}</label><select id="c">${courseOpts(courses)}</select>
+    <label for="pb">${t('problemL')}</label><textarea id="pb" maxlength="2000"></textarea>
+    <label for="ob">${t('objectivesL')}</label><textarea id="ob" maxlength="2000"></textarea>
     <label for="s">${t('supervisor')}</label><select id="s">${courseOpts(sups)}</select>
-    <label for="fl">${t('proposalFile')}</label>
-    <input id="fl" type="file" required accept=".pdf,.doc,.docx">
-    <p><button type="submit">${t('submit')}</button></p></form></div>`;
+    <label for="fl">${t('topicFile')}</label><input id="fl" type="file" accept=".pdf,.doc,.docx">
+    <p><button type="submit" id="go">${t('submit')}</button></p></form></div>`;
+  const who = () => {
+    const team = teams.find(x => x.course_id === Number($('#c').value));
+    $('#who').innerHTML = team ? `<b>${t('yourTeamFor', { team: esc(team.name) })}</b> ${team.my_role === 'leader' ? '' : `<span class="overdue">${t('onlyLeaderTopic')}</span>`}` : `<span class="mute">${t('individualFor')} — ${t('noTeamWarn')}</span>`;
+    $('#go').disabled = !!team && team.my_role !== 'leader';
+  };
+  $('#c').onchange = who; who();
   $('#f').onsubmit = act(async e => {
     e.preventDefault();
     const f = $('#fl').files[0];
-    if (f.size > 10 * 1048576) throw new Error(tErr('File exceeds the 10 MB limit'));
-    const r = await api('POST', '/research', { title: $('#t').value, description: $('#ds').value, courseId: $('#c').value, supervisorId: $('#s').value, filename: f.name, data: await readFile(f) });
+    if (f && f.size > 10 * 1048576) throw new Error(tErr('File exceeds the 10 MB limit'));
+    const body = { title: $('#t').value, description: $('#ds').value, problem: $('#pb').value, objectives: $('#ob').value, courseId: $('#c').value, supervisorId: $('#s').value };
+    if (f) Object.assign(body, { filename: f.name, data: await readFile(f) });
+    const r = await api('POST', '/research', body);
     state.tab = 'myResearch'; state.openId = r.id; render();
   }, 'toast.research');
 }

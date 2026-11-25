@@ -25,6 +25,7 @@ Requirements:
 | `ADMIN_EMAIL` | optional, default `admin@example.com` |
 | `TRUST_PROXY` | `1` (already set in the Dockerfile) |
 
-3. After first login as admin: create the supervisor and student accounts from the **Users** tab.
+3. After first login as admin: create the supervisor accounts from the **Users** tab, then add your students' University IDs under **Approved IDs** (choose their courses).
+   Students register themselves with their ID, you approve them under **Registrations**, and their first password is their University ID (they must change it at first login).
 
 Run a single instance (the SQLite database and login rate limit are per-process).

@@ -11,19 +11,28 @@ supervisors (doctors) review, comment on and grade that work, and admins manage 
 ويدير المسؤول المستخدمين والمواعيد النهائية والتقارير.
 
 Full description: [docs/PROJECT_DESCRIPTION.md](docs/PROJECT_DESCRIPTION.md) — الوصف الكامل للمشروع.  
-Supervisor requirements traceability: [docs/SUPERVISOR_REQUIREMENTS.md](docs/SUPERVISOR_REQUIREMENTS.md).
+Requirements traceability: [supervisor](docs/SUPERVISOR_REQUIREMENTS.md) · [student](docs/STUDENT_REQUIREMENTS.md).
 
 ## Supervisor (Doctor) permissions / صلاحيات الدكتور
 Research (own only): approve, reject **with reason**, request changes · custom stages (any number, formats, size, attempts, deadlines, rubric, assignment to students/teams, open/close/postpone, reorder) ·
 review and download every submission (all attempts kept), approve/modify/reject with feedback, allow resubmission · grade each stage (rubric) and the final research (0–100) ·
 manage teams (members, leader) · private messages, announcements and reminders · notifications · dashboard and reports (CSV) · history of every action.
-Not allowed: users/roles/courses, global deadlines, other supervisors' data, deleting submissions or history.
+Not allowed: users/roles/course creation (team rules of a course can be set), global deadlines, other supervisors' data, deleting submissions or history.
 Details and mapping to code: [docs/SUPERVISOR_REQUIREMENTS.md](docs/SUPERVISOR_REQUIREMENTS.md).
+
+Approved University IDs for trying the registration flow (non-production): `20240003` … `20240008`
+(register → the admin approves under **Registrations** → first login with password = the ID → forced password change).
 
 ## Use cases → where they live
 | Use case | Actor | Endpoint / controller fn |
 |---|---|---|
-| Log in | all | `POST /api/login` |
+| Log in (University ID for students, e-mail for staff) | all | `POST /api/login` |
+| Register by University ID (checked against the approved list) | visitor | `POST /api/register` |
+| Approve / reject registration, manage approved IDs and enrollments | admin | `/api/registrations…`, `/api/approved-ids…`, `PUT /api/users/:id/enrollments` |
+| First-login password change (forced) | student | `POST /api/me/password`, gate in `server.js` |
+| Available students, create team, invitations, join requests, invitation code, leave/remove/lock + change requests | student | `src/controllers/studentTeams.js` |
+| Student dashboard | student | `GET /api/student/dashboard` |
+| Edit & resubmit a topic, publish grades | student / supervisor | `PUT /api/research/:id/topic`, `…/grade/publish`, `…/targets/:rid/publish` |
 | Register research topic | student | `POST /api/research` → `registerTopic` |
 | Upload new version (+ Check file) | student | `POST /api/research/:id/versions` → `uploadVersion`, `checkFile` |
 | View status & feedback | student | `GET /api/research[/:id]` |

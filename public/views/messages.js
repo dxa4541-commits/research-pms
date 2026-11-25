@@ -6,11 +6,12 @@ const kindTag = k => k === 'message' ? '' : `<span class="badge ${k === 'reminde
 export async function renderMessages(view) {
   const sup = state.user.role === 'supervisor';
   const threads = await api('GET', '/messages/threads');
-  const keyOf = th => sup ? th.key : `sup${th.supervisor_id}`;
+  const keyOf = th => th.key;
   const cur = threads.find(th => keyOf(th) === state.thread) ?? (state.thread === 'new' && sup ? null : threads[0]);
   const composing = sup && state.thread === 'new';
   if (cur && !composing) state.thread = keyOf(cur);
-  const q = th => sup ? (th.team_id ? `team=${th.team_id}` : `student=${th.student_id}`) : `supervisor=${th.supervisor_id}`;
+  const tq = th => th.team_id ? `team=${th.team_id}` : `student=${th.student_id}`;
+  const q = th => sup ? tq(th) : `supervisor=${th.supervisor_id}&${tq(th)}`;
   const msgs = cur && !composing ? await api('GET', `/messages?${q(cur)}`) : [];
   const stages = sup ? await api('GET', '/stages') : [];
   let subs = [];
@@ -18,7 +19,7 @@ export async function renderMessages(view) {
 
   const side = `<div class="card threads"><h3>${t('conversations')}</h3>
     ${sup ? `<button class="ghost" id="newann" style="width:100%;margin-bottom:8px">＋ ${t('newAnnouncement')}</button>` : ''}
-    ${threads.length ? threads.map(th => `<div class="thread ${keyOf(th) === state.thread && !composing ? 'on' : ''}" data-th="${keyOf(th)}"><b>${esc(sup ? th.name : th.name)}</b>
+    ${threads.length ? threads.map(th => `<div class="thread ${keyOf(th) === state.thread && !composing ? 'on' : ''}" data-th="${keyOf(th)}"><b>${esc(th.name)}</b>${!sup && th.team ? ` <span class="mute small">· ${esc(th.team)}</span>` : ''}
       <div class="small mute">${sup ? (th.team_id ? esc(th.members.join('، ')) : t('individual')) : t('toSupervisor')}</div>
       ${th.last ? `<div class="small mute ellip">${esc(th.last.body)}</div>` : ''}</div>`).join('') : `<span class="mute">${t('noConversations')}</span>`}</div>`;
 
@@ -55,7 +56,7 @@ export async function renderMessages(view) {
     const body = { body: $('#mb').value, ...(await fileOf($('#mfile'))) };
     if (sup) { Object.assign(body, cur.team_id ? { teamId: cur.team_id } : { studentId: cur.student_id });
       if ($('#ls').value) body.stageId = Number($('#ls').value); if ($('#lu').value) body.submissionId = Number($('#lu').value); }
-    else body.supervisorId = cur.supervisor_id;
+    else Object.assign(body, { supervisorId: cur.supervisor_id }, cur.team_id ? { teamId: cur.team_id } : { studentId: cur.student_id });
     await api('POST', '/messages', body); render();
   }, 'messageSent');
   if ($('#lu')) $('#lu').onchange = () => { const o = $('#lu').selectedOptions[0]; if (o.dataset.stage) $('#ls').value = o.dataset.stage; };

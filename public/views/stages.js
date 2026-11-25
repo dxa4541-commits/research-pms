@@ -3,6 +3,7 @@
 import { esc, t, tErr, badge, fmtDate, fmtDay, fmtSize, api, downloadPath, readFile, act } from '../core.js';
 
 export const stateBadge = s => `<span class="badge ${s}">${t('state.' + s)}</span>`;
+const statusBadge = (e, role) => role === 'student' ? `<span class="badge ${e.display_status}">${t('ds.' + e.display_status)}</span>` : badge(e.status);
 const lateBadge = `<span class="badge overdue">${t('late')}</span>`;
 const num = n => Number.isInteger(+n) ? String(+n) : (+n).toFixed(1);
 
@@ -17,9 +18,9 @@ function submissionHtml(sub, role) {
 
 function gradeBlock(e, role) {
   const { stage, grade, criteria } = e;
-  const view = grade ? `<div class="small"><b>${t('stageGrade')}: ${num(grade.score)}/${num(stage.max_grade)}</b>${grade.comment ? ' — ' + esc(grade.comment) : ''}
+  const view = grade ? `<div class="small"><b>${t('stageGrade')}: ${num(grade.score)}/${num(stage.max_grade)}</b>${role === 'supervisor' ? ` <span class="badge ${grade.published ? 'approved' : 'closed'}">${grade.published ? t('published') : t('unpublished')}</span> <button class="ghost" data-pubtoggle="${grade.published ? 0 : 1}">${grade.published ? t('hideGrade') : t('publishGrade')}</button>` : ''}${grade.comment ? ' — ' + esc(grade.comment) : ''}
       ${criteria.length ? `<div class="mute">${criteria.map(c => `${esc(c.name)}: ${num(grade.scores.find(s => s.criterion_id === c.id)?.score ?? 0)}/${num(c.max_score)}`).join(' · ')}</div>` : ''}</div>`
-    : `<div class="small mute">${t('notGradedYet')}</div>`;
+    : (e.grade_pending ? `<div class="small mute">${t('gradePending')}</div>` : `<div class="small mute">${t('notGradedYet')}</div>`);
   if (role !== 'supervisor') return view;
   const dis = stage.grades_locked ? 'disabled' : '';
   return `${view}<div class="gradebox"><div class="row">
@@ -27,13 +28,13 @@ function gradeBlock(e, role) {
         <input type="number" min="0" max="${c.max_score}" step="0.5" style="width:90px" data-crit="${c.id}" value="${grade?.scores.find(s => s.criterion_id === c.id)?.score ?? ''}" ${dis}></label>`).join('')
       : `<label class="inl">${t('scoreOf', { max: num(stage.max_grade) })} <input type="number" min="0" max="${stage.max_grade}" step="0.5" style="width:110px" data-score value="${grade?.score ?? ''}" ${dis}></label>`}
     </div><div class="row" style="margin-top:6px"><input class="grow" placeholder="${t('gradeComment')}" data-gcomment value="${esc(grade?.comment ?? '')}" ${dis}>
-    <button data-savegrade ${dis}>${t('saveGrade')}</button>${stage.grades_locked ? `<span class="badge closed">${t('locked')}</span>` : ''}</div></div>`;
+    <label class="inl small"><input type="checkbox" data-gpub ${grade?.published ? 'checked' : ''}> ${t('saveAndPublish')}</label><button data-savegrade ${dis}>${t('saveGrade')}</button>${stage.grades_locked ? `<span class="badge closed">${t('locked')}</span>` : ''}</div></div>`;
 }
 
 function entryHtml(e, role, researchId) {
   const { stage } = e, latest = e.submissions[0];
   const attemptsLeft = e.attempts_left == null ? t('unlimited') : e.attempts_left;
-  return `<div class="stagebox" data-stage="${stage.id}"><div class="row"><b class="grow">${esc(stage.name)}</b>${stateBadge(stage.phase)}${badge(e.status)}${e.late ? lateBadge : ''}</div>
+  return `<div class="stagebox" data-stage="${stage.id}"><div class="row"><b class="grow">${esc(stage.name)}</b>${stateBadge(stage.phase)}${statusBadge(e, role)}${e.late ? lateBadge : ''}</div>
     <p class="small mute">${t('deadlineShort')}: ${stage.deadline ? fmtDay(stage.deadline) : '—'}${stage.start_date ? ` · ${t('startDate')}: ${fmtDay(stage.start_date)}` : ''} · ${t('maxGrade')}: ${num(stage.max_grade)}
       · ${t('limits', { f: stage.formats.join(', '), mb: num(stage.max_file_mb) })} · ${t('attemptsLeft', { n: attemptsLeft })}</p>
     ${stage.description ? `<p>${esc(stage.description)}</p>` : ''}${stage.instructions ? `<p class="small"><b>${t('requirements')}:</b> ${esc(stage.instructions)}</p>` : ''}
@@ -68,11 +69,13 @@ export async function renderResearchStages(el, researchId, { role, onlyStageId =
     }, 'toast.review'));
     const gb = b.querySelector('[data-savegrade]');
     if (gb) gb.onclick = act(async () => {
-      const body = { comment: b.querySelector('[data-gcomment]').value };
+      const body = { comment: b.querySelector('[data-gcomment]').value, publish: b.querySelector('[data-gpub]').checked };
       if (e.criteria.length) body.criteria = e.criteria.map(c => ({ id: c.id, score: b.querySelector(`[data-crit="${c.id}"]`).value }));
       else body.score = b.querySelector('[data-score]').value;
       await api('PUT', `/stages/${e.stage.id}/targets/${researchId}/grade`, body); await refresh();
     }, 'toast.gradeStage');
+    const pt = b.querySelector('[data-pubtoggle]');
+    if (pt) pt.onclick = act(async () => { await api('PUT', `/stages/${e.stage.id}/targets/${researchId}/publish`, { published: pt.dataset.pubtoggle === '1' }); await refresh(); }, 'toast.gradeStage');
     const sb = b.querySelector('[data-submit]');
     if (sb) sb.onclick = act(async () => {
       const f = b.querySelector('[data-file]').files[0]; if (!f) throw new Error(t('chooseFile'));
