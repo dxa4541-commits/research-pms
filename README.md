@@ -3,6 +3,29 @@
 Web app built from the use-case and class diagrams (student / supervisor / admin).
 Zero dependencies — needs only Node.js 22.5+ (uses the built-in `node:sqlite`).
 
+## About the project / نبذة عن المشروع
+Research Project Management System lets students register research topics and upload versions of their work,
+supervisors (doctors) review, comment on and grade that work, and admins manage users, deadlines and progress reports.
+
+نظام لإدارة المشاريع البحثية: يسجّل الطالب موضوع بحثه ويرفع نسخ العمل، ويراجع الدكتور (المشرف) العمل ويعلّق عليه ويقيّمه،
+ويدير المسؤول المستخدمين والمواعيد النهائية والتقارير.
+
+## Supervisor (Doctor) permissions / صلاحيات الدكتور
+| Permission / الصلاحية | Details |
+|---|---|
+| Approve or reject a research topic / قبول أو رفض الموضوع | Optional comment; the student is notified |
+| Request changes / طلب تعديلات | Comment required; status becomes `changes_requested` |
+| Review a version and add notes / مراجعة النسخة وإضافة ملاحظات | Per submission; the student is notified |
+| Grade research / تقييم البحث | Score 0–100, one grade per research (can be updated) |
+| Download submitted files / تحميل الملفات المرفوعة | For his own research only |
+| View my students and their research / عرض طلابي وأبحاثهم | Only research assigned to him |
+| Form teams / تكوين الفرق | Group students into a team for a course (also available to admin) |
+| View notifications / الإشعارات | New versions, deadlines |
+| Change own password / تغيير كلمة المرور | |
+
+**Not allowed for the supervisor / غير مسموح:** managing users or roles, setting deadlines, viewing reports, registering topics or uploading versions,
+and accessing research of other supervisors (each action on a research is limited to its assigned supervisor).
+
 ```bash
 npm start        # http://localhost:3000   (PORT env var to change)
 npm test         # end-to-end test of every use case
