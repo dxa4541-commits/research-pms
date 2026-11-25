@@ -1,0 +1,16 @@
+# Render Blueprint: New + → Blueprint → pick this repository.
+services:
+  - type: web
+    name: research-pms
+    runtime: docker
+    plan: starter          # a persistent disk needs a paid plan; on the free plan all data is erased on every restart
+    healthCheckPath: /
+    envVars:
+      - key: ADMIN_PASSWORD
+        sync: false        # you type it in the Render dashboard (8+ characters) — it is never stored in the repo
+      - key: ADMIN_EMAIL
+        value: admin@example.com
+    disk:
+      name: pms-data
+      mountPath: /data     # the Dockerfile keeps the database and uploads here
+      sizeGB: 1

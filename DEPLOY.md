@@ -11,6 +11,9 @@ npx cloudflared tunnel --url http://localhost:3000   # terminal 2 -> prints http
 (or `ngrok http 3000`). Send that link to the doctor. Demo accounts work, so give the doctor `doctor@example.com / doctor123`.
 Stop the tunnel when finished: anyone with the link can log in with the demo passwords.
 
+## Render (ready-made)
+`render.yaml` is a Blueprint: on Render choose **New + → Blueprint**, select this repository, enter `ADMIN_PASSWORD`, and deploy. Keep the paid plan: the disk at `/data` is what keeps your data.
+
 ## Option B — permanent URL (hosting)
 The repo includes a `Dockerfile`; any host that runs Docker/Node works (Render, Railway, Fly.io...).
 Requirements:
