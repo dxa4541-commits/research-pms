@@ -45,11 +45,14 @@ export function listFor(user, opts = {}) {
   const w = where.length ? ' WHERE ' + where.join(' AND ') : '';
   const total = db.prepare('SELECT COUNT(*) AS n FROM research r' + w).get(...args).n;
   const rows = db.prepare(`
-    SELECT r.id,r.title,r.status,r.created_at,c.name AS course,s.name AS student,v.name AS supervisor,t.name AS team,
+    SELECT r.id,r.title,r.description,r.status,r.created_at,c.name AS course,s.name AS student,v.name AS supervisor,t.name AS team,
       r.deadline,
       (r.deadline IS NOT NULL AND r.deadline < date('now') AND r.status IN ('pending','changes_requested')) AS overdue,
       (SELECT COUNT(*) FROM submissions WHERE research_id=r.id) AS versions,
-      (SELECT g.score FROM research_grades g WHERE g.research_id=r.id) AS grade
+      (SELECT g.score FROM research_grades g WHERE g.research_id=r.id) AS grade,
+      (SELECT COUNT(*) FROM stage_targets x WHERE x.research_id=r.id) AS stages_total,
+      (SELECT COUNT(*) FROM stage_targets x WHERE x.research_id=r.id AND
+        (SELECT status FROM stage_submissions y WHERE y.stage_id=x.stage_id AND y.research_id=x.research_id ORDER BY attempt_no DESC LIMIT 1)='approved') AS stages_approved
     FROM research r JOIN courses c ON c.id=r.course_id
     JOIN users s ON s.id=r.student_id JOIN users v ON v.id=r.supervisor_id
     LEFT JOIN teams t ON t.id=r.team_id${w}

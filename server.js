@@ -4,6 +4,8 @@ import { join, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { db } from './src/db.js';
 import { handlers, authenticate, HttpError, MAX_FILE_BYTES } from './src/controller.js';
+import { cleanup } from './src/controllers/auth.js';
+import { checkDeadlines } from './src/deadlines.js';
 
 const PUBLIC = join(fileURLToPath(new URL('.', import.meta.url)), 'public');
 const MAX_BODY = Math.ceil(MAX_FILE_BYTES * 1.4) + 4096; // base64 overhead
@@ -36,6 +38,38 @@ const routes = [
   ['GET', '/api/submissions/:id/file', 'downloadFile', []],
   ['GET', '/api/teams', 'listTeams', [V, A]],
   ['POST', '/api/teams', 'formTeams', [V, A]],
+  ['PUT', '/api/teams/:id/members', 'updateTeamMembers', [V, A]],
+  ['PUT', '/api/teams/:id/leader', 'setTeamLeader', [V, A]],
+  // Stages (supervisor), stage submissions (student), per-research stage view (all roles, access-checked)
+  ['GET', '/api/stages', 'listStages', [V, A]],
+  ['POST', '/api/stages', 'createStage', [V]],
+  ['PUT', '/api/stages/reorder', 'reorderStages', [V]],
+  ['GET', '/api/stages/:id', 'getStageDetail', [V, A]],
+  ['PUT', '/api/stages/:id', 'updateStage', [V]],
+  ['DELETE', '/api/stages/:id', 'deleteStage', [V]],
+  ['PUT', '/api/stages/:id/state', 'setStageState', [V]],
+  ['PUT', '/api/stages/:id/grades-lock', 'setGradesLock', [V]],
+  ['POST', '/api/stages/:id/targets', 'assignStage', [V]],
+  ['DELETE', '/api/stages/:id/targets/:rid', 'unassignStage', [V]],
+  ['POST', '/api/stages/:id/targets/:rid/allow-resubmit', 'allowResubmit', [V]],
+  ['PUT', '/api/stages/:id/targets/:rid/grade', 'gradeStage', [V]],
+  ['POST', '/api/stages/:id/remind', 'remindStage', [V]],
+  ['GET', '/api/stages/:id/history', 'stageHistory', [V, A]],
+  ['POST', '/api/stages/:id/submissions', 'submitStage', [S]],
+  ['GET', '/api/research/:id/stages', 'researchStages', []],
+  ['GET', '/api/research/:id/history', 'researchHistory', [V, A]],
+  ['GET', '/api/stage-submissions/:id/file', 'downloadStageFile', []],
+  ['POST', '/api/stage-submissions/:id/review', 'reviewStageSubmission', [V]],
+  // Messaging (private team threads; admin has no access)
+  ['GET', '/api/messages/threads', 'listThreads', [S, V]],
+  ['GET', '/api/messages', 'listMessages', [S, V]],
+  ['POST', '/api/messages', 'sendMessage', [S, V]],
+  ['POST', '/api/messages/announce', 'announce', [V]],
+  ['GET', '/api/messages/:id/file', 'downloadMessageFile', [S, V]],
+  // Supervisor dashboard & reports
+  ['GET', '/api/supervisor/dashboard', 'dashboard', [V]],
+  ['GET', '/api/supervisor/reports', 'supervisorReport', [V]],
+  ['GET', '/api/supervisor/reports/export', 'exportReport', [V]],
   ['GET', '/api/reports', 'reports', [A]],
   ['GET', '/api/notifications', 'listNotifications', []],
   ['POST', '/api/notifications/read', 'readNotifications', []],
@@ -96,7 +130,7 @@ async function api(req, res, url) {
     const out = handlers[route.handler]({ user, token, params, body, query: url.searchParams, ip: clientIp(req) });
     if (out?.file) {
       return send(res, 200, out.file, {
-        'Content-Type': 'application/octet-stream',
+        'Content-Type': out.contentType ?? 'application/octet-stream',
         'Content-Disposition': `attachment; filename="${encodeURIComponent(out.filename)}"`,
       });
     }
@@ -129,6 +163,9 @@ export const server = http.createServer((req, res) => {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT) || 3000;
   server.listen(port, () => console.log(`Research PMS running at http://localhost:${port}`));
+  // Hourly housekeeping: expired sessions + deadline reminders (does not keep the process alive).
+  const tick = () => { try { cleanup(); checkDeadlines(); } catch (e) { console.error('Housekeeping failed:', e.message); } };
+  tick(); setInterval(tick, 3600 * 1000).unref();
   const stop = () => { server.close(() => { db.close(); process.exit(0); }); setTimeout(() => process.exit(1), 5000).unref(); };
   process.on('SIGTERM', stop); process.on('SIGINT', stop);
 }

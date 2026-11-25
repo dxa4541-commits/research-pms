@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { db } from '../db.js';
 import { fail, str, need, intParam } from '../errors.js';
 import { UPLOAD_DIR, checkFile, createSubmission, removeFile } from '../files.js';
+import { stageTotals } from '../stages.js';
 import { notify, notifySupervisor } from '../notifications.js';
 import { updateStatus, getResearch, accessible, listFor, STATUSES, MAX_PAGE } from '../research.js';
 
@@ -15,12 +16,13 @@ export const researchHandlers = {
     const sup = db.prepare("SELECT id FROM users WHERE id=? AND role='supervisor'").get(Number(body.supervisorId)) ?? fail(400, 'Choose a valid supervisor');
     if (user.team_id && db.prepare('SELECT 1 FROM research WHERE team_id=?').get(user.team_id))
       fail(409, 'Your team already has a research project');
+    const description = body.description == null || body.description === '' ? null : (str(body.description, 2000) ?? fail(400, 'Description is too long (max 2000 chars)'));
     const { buf } = checkFile(body.filename, body.data); // validate before inserting anything
     db.exec('BEGIN');
     let created;
     try {
-      const r = db.prepare('INSERT INTO research (title,student_id,supervisor_id,team_id,course_id) VALUES (?,?,?,?,?)')
-        .run(title, user.id, sup.id, user.team_id ?? null, course.id);
+      const r = db.prepare('INSERT INTO research (title,description,student_id,supervisor_id,team_id,course_id) VALUES (?,?,?,?,?,?)')
+        .run(title, description, user.id, sup.id, user.team_id ?? null, course.id);
       const id = Number(r.lastInsertRowid);
       created = createSubmission(id, 1, body.filename, buf);
       db.exec('COMMIT');
@@ -57,8 +59,8 @@ export const researchHandlers = {
     const notes = db.prepare(`SELECT n.id,n.text,n.created_at,u.name AS author FROM notes n
       JOIN users u ON u.id=n.author_id WHERE n.submission_id=? ORDER BY n.id`);
     for (const s of subs) s.notes = notes.all(s.id);
-    const g = db.prepare('SELECT score FROM research_grades WHERE research_id=?').get(r.id);
-    return { ...r, grade: g?.score ?? null, submissions: subs };
+    const g = db.prepare('SELECT score,comment FROM research_grades WHERE research_id=?').get(r.id);
+    return { ...r, grade: g?.score ?? null, grade_comment: g?.comment ?? null, submissions: subs, stage_totals: stageTotals(r.id) };
   },
   downloadFile({ user, params }) {
     const s = db.prepare('SELECT * FROM submissions WHERE id=?').get(Number(params.id)) ?? fail(404, 'File not found');

@@ -69,6 +69,110 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 `);
 
+// Additive migrations (safe on databases created by older versions).
+const addCol = (table, col, def) => {
+  if (!db.prepare(`SELECT 1 FROM pragma_table_info('${table}') WHERE name=?`).get(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
+};
+addCol('research', 'description', 'TEXT');
+addCol('research', 'rejection_reason', 'TEXT');
+addCol('teams', 'leader_id', 'INTEGER');
+addCol('teams', 'created_by', 'INTEGER');
+addCol('research_grades', 'comment', 'TEXT');
+addCol('research_grades', 'updated_at', 'TEXT');
+
+// Supervisor features: customizable stages, stage submissions/reviews/grades, team messages, audit history.
+// Nothing here is ever UPDATEd destructively or DELETEd by the API except stages that have not started.
+db.exec(`
+CREATE TABLE IF NOT EXISTS stages (
+  id INTEGER PRIMARY KEY,
+  supervisor_id INTEGER NOT NULL REFERENCES users(id),
+  course_id INTEGER NOT NULL REFERENCES courses(id),
+  position INTEGER NOT NULL DEFAULT 0,
+  name TEXT NOT NULL, description TEXT, instructions TEXT,
+  start_date TEXT, deadline TEXT,
+  max_grade REAL NOT NULL DEFAULT 100 CHECK (max_grade > 0 AND max_grade <= 1000),
+  allowed_formats TEXT NOT NULL DEFAULT 'pdf,doc,docx',
+  max_file_mb REAL NOT NULL DEFAULT 10 CHECK (max_file_mb > 0 AND max_file_mb <= 10),
+  allow_resubmit INTEGER NOT NULL DEFAULT 1,
+  max_attempts INTEGER,
+  state TEXT NOT NULL DEFAULT 'scheduled' CHECK (state IN ('scheduled','open','closed','postponed')),
+  assign_all INTEGER NOT NULL DEFAULT 0,
+  grades_locked INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS stage_criteria (
+  id INTEGER PRIMARY KEY,
+  stage_id INTEGER NOT NULL REFERENCES stages(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, max_score REAL NOT NULL CHECK (max_score > 0), position INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS stage_targets (
+  stage_id INTEGER NOT NULL REFERENCES stages(id) ON DELETE CASCADE,
+  research_id INTEGER NOT NULL REFERENCES research(id),
+  extra_attempts INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (stage_id, research_id)
+);
+CREATE TABLE IF NOT EXISTS stage_submissions (
+  id INTEGER PRIMARY KEY,
+  stage_id INTEGER NOT NULL REFERENCES stages(id),
+  research_id INTEGER NOT NULL REFERENCES research(id),
+  attempt_no INTEGER NOT NULL,
+  filename TEXT NOT NULL, stored_name TEXT NOT NULL, size INTEGER NOT NULL,
+  student_note TEXT, submitted_by INTEGER NOT NULL REFERENCES users(id),
+  late INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'submitted' CHECK (status IN ('submitted','approved','changes_requested','rejected')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (stage_id, research_id, attempt_no)
+);
+CREATE TABLE IF NOT EXISTS stage_reviews (
+  id INTEGER PRIMARY KEY,
+  submission_id INTEGER NOT NULL REFERENCES stage_submissions(id),
+  reviewer_id INTEGER NOT NULL REFERENCES users(id),
+  decision TEXT NOT NULL CHECK (decision IN ('approved','changes_requested','rejected','comment')),
+  comment TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS stage_grades (
+  stage_id INTEGER NOT NULL REFERENCES stages(id) ON DELETE CASCADE,
+  research_id INTEGER NOT NULL REFERENCES research(id),
+  score REAL NOT NULL CHECK (score >= 0), comment TEXT,
+  graded_by INTEGER REFERENCES users(id), updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (stage_id, research_id)
+);
+CREATE TABLE IF NOT EXISTS stage_grade_scores (
+  stage_id INTEGER NOT NULL, research_id INTEGER NOT NULL,
+  criterion_id INTEGER NOT NULL REFERENCES stage_criteria(id) ON DELETE CASCADE, score REAL NOT NULL CHECK (score >= 0),
+  PRIMARY KEY (stage_id, research_id, criterion_id)
+);
+CREATE TABLE IF NOT EXISTS messages (
+  id INTEGER PRIMARY KEY,
+  supervisor_id INTEGER NOT NULL REFERENCES users(id),
+  team_id INTEGER REFERENCES teams(id), student_id INTEGER REFERENCES users(id),
+  sender_id INTEGER NOT NULL REFERENCES users(id),
+  kind TEXT NOT NULL DEFAULT 'message' CHECK (kind IN ('message','announcement','reminder')),
+  body TEXT NOT NULL,
+  stage_id INTEGER REFERENCES stages(id), submission_id INTEGER REFERENCES stage_submissions(id),
+  filename TEXT, stored_name TEXT, size INTEGER,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CHECK ((team_id IS NULL) <> (student_id IS NULL))
+);
+CREATE TABLE IF NOT EXISTS deadline_events (
+  stage_id INTEGER NOT NULL, research_id INTEGER NOT NULL, kind TEXT NOT NULL, deadline TEXT NOT NULL,
+  PRIMARY KEY (stage_id, research_id, kind, deadline)
+);
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INTEGER PRIMARY KEY, actor_id INTEGER, action TEXT NOT NULL,
+  research_id INTEGER, stage_id INTEGER, detail TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_stages_sup ON stages(supervisor_id, position);
+CREATE INDEX IF NOT EXISTS idx_targets_research ON stage_targets(research_id);
+CREATE INDEX IF NOT EXISTS idx_ssub_target ON stage_submissions(stage_id, research_id);
+CREATE INDEX IF NOT EXISTS idx_sreview_sub ON stage_reviews(submission_id);
+CREATE INDEX IF NOT EXISTS idx_msg_team ON messages(team_id, supervisor_id, id);
+CREATE INDEX IF NOT EXISTS idx_msg_student ON messages(student_id, supervisor_id, id);
+CREATE INDEX IF NOT EXISTS idx_audit_research ON audit_log(research_id, id);
+`);
+
 // Migration: deadline column (added after v1) + indexes for scale.
 if (!db.prepare("SELECT 1 FROM pragma_table_info('research') WHERE name='deadline'").get())
   db.exec('ALTER TABLE research ADD COLUMN deadline TEXT');
