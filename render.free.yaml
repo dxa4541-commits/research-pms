@@ -1,0 +1,13 @@
+# Free trial on Render (no persistent disk: data is erased whenever the service restarts or sleeps).
+# Use render.yaml (paid plan + disk) for real use.
+services:
+  - type: web
+    name: research-pms-trial
+    runtime: docker
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_EMAIL
+        value: admin@example.com
