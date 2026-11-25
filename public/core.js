@@ -19,6 +19,14 @@ export function setLang(l) {
   document.documentElement.lang = l; document.documentElement.dir = I18N[l].dir; render();
 }
 document.documentElement.lang = lang; document.documentElement.dir = I18N[lang].dir;
+// ---------- theme (light default, dark optional; remembered per browser) ----------
+export let theme = (() => { try { return localStorage.getItem('theme'); } catch { return null; } })() === 'dark' ? 'dark' : 'light';
+document.documentElement.dataset.theme = theme;
+export function setTheme(v) {
+  theme = v === 'dark' ? 'dark' : 'light'; document.documentElement.dataset.theme = theme;
+  try { localStorage.setItem('theme', theme); } catch { /* storage blocked: preference only */ }
+  render();
+}
 export const tErr = m => {
   if (lang !== 'ar') return m;
   if (ERR_AR[m]) return ERR_AR[m];

@@ -1,13 +1,13 @@
 // Public screens: log in, student registration, forced first-login password change.
-import { $, esc, t, state, api, act, lang, setLang, toast, render, roleLabel } from '../core.js';
+import { $, esc, t, state, api, act, lang, setLang, toast, render, roleLabel, theme, setTheme } from '../core.js';
 import { icon, avatar, enhanceForms } from '../ui.js';
 
 const langBtn = () => `<button type="button" class="ghost sm" id="lang" aria-label="${t('language')}">${icon('globe')} ${lang === 'ar' ? 'English' : 'العربية'}</button>`;
 const side = () => `<aside class="auth-side"><div class="row" style="gap:12px"><span class="sb-logo">${icon('cap')}</span><b style="font-size:1.1rem;color:var(--ink)">${t('brand')}</b></div>
   <div><h1>${t('auth.lead')}</h1><ul><li>${icon('layers')}<span>${t('auth.f1')}</span></li><li>${icon('users')}<span>${t('auth.f2')}</span></li><li>${icon('globe')}<span>${t('auth.f3')}</span></li></ul></div>
   <span class="small" style="opacity:.7">${t('auth.tag')}</span></aside>`;
-const wrap = inner => `<div class="auth">${side()}<main class="auth-main"><div class="auth-card"><div class="auth-top">${langBtn()}</div>${inner}</div></main></div>`;
-const bindLang = () => { $('#lang').onclick = () => setLang(lang === 'ar' ? 'en' : 'ar'); enhanceForms(document); };
+const wrap = inner => `<div class="auth">${side()}<main class="auth-main"><div class="auth-card"><div class="auth-top"><button type="button" class="ghost sm" id="themeb" aria-label="${t(theme === 'dark' ? 'th.light' : 'th.dark')}">${icon(theme === 'dark' ? 'sun' : 'moon')}</button>${langBtn()}</div>${inner}</div></main></div>`;
+const bindLang = () => { $('#lang').onclick = () => setLang(lang === 'ar' ? 'en' : 'ar'); $('#themeb').onclick = () => setTheme(theme === 'dark' ? 'light' : 'dark'); enhanceForms(document); };
 // password field with a show/hide toggle (accessible)
 const pwField = (id, label, auto) => `<label for="${id}">${label}</label><div class="search"><input id="${id}" type="password" required dir="ltr" autocomplete="${auto}" style="padding-inline-end:44px">
   <button type="button" class="icon" data-pw="${id}" aria-label="${t('auth.show')}" style="position:absolute;inset-inline-end:2px">${icon('eye')}</button></div>`;

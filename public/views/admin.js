@@ -49,10 +49,10 @@ export async function renderAdminDashboard(view) {
       <div class="row">${pending.length ? `<button data-go="registrations">${icon('userCheck')} ${t('ad.reviewNow')}</button>` : ''}<button class="ghost" data-qa="adduser">${icon('userPlus')} ${t('addUser')}</button></div></section>
     <div class="stats four">
       ${statCard({ ic: 'users', label: t('rUsers'), value: users.length, desc: t('ad.d.users', { n: users.filter(u => u.active).length }), accent: 'var(--primary)', to: 'users', feature: true })}
-      ${statCard({ ic: 'cap', label: t('ad.students'), value: studs.length, desc: t('ad.d.students', { n: studs.filter(u => u.must_change_password).length }), accent: 'var(--teal)', to: 'users' })}
-      ${statCard({ ic: 'shield', label: t('ad.supervisors'), value: sups.length, desc: t('ad.d.sups', { n: supRows.filter(x => x.n).length }), accent: '#9B7BEA', to: 'users' })}
-      ${statCard({ ic: 'book', label: t('nav.courses'), value: courses.length, desc: t('ad.d.courses', { n: courses.filter(c => c.team_mode !== 'individual').length }), accent: 'var(--cyan)', to: 'courses' })}
-      ${statCard({ ic: 'users', label: t('nav.teams'), value: teams.length, desc: t('ad.d.teams', { n: teams.filter(x => x.locked).length }), accent: '#22B8CF' })}
+      ${statCard({ ic: 'cap', label: t('ad.students'), value: studs.length, desc: t('ad.d.students', { n: studs.filter(u => u.must_change_password).length }), accent: 'rgb(var(--t))', to: 'users' })}
+      ${statCard({ ic: 'shield', label: t('ad.supervisors'), value: sups.length, desc: t('ad.d.sups', { n: supRows.filter(x => x.n).length }), accent: 'rgb(var(--t))', to: 'users' })}
+      ${statCard({ ic: 'book', label: t('nav.courses'), value: courses.length, desc: t('ad.d.courses', { n: courses.filter(c => c.team_mode !== 'individual').length }), accent: 'var(--primary)', to: 'courses' })}
+      ${statCard({ ic: 'users', label: t('nav.teams'), value: teams.length, desc: t('ad.d.teams', { n: teams.filter(x => x.locked).length }), accent: 'var(--primary)' })}
       ${statCard({ ic: 'fileText', label: t('rResearch'), value: rep.totals.research, desc: t('ad.d.research', { n: st('approved') }), accent: 'var(--ok)', to: 'research' })}
       ${statCard({ ic: 'userCheck', label: t('ad.pending'), value: pending.length, desc: t('ad.d.pending'), accent: 'var(--amber)', to: 'registrations' })}
       ${statCard({ ic: 'alert', label: t('ad.alerts'), value: alerts, desc: t('ad.d.alerts', { o: rep.totals.overdue, i: users.filter(u => !u.active).length }), accent: alerts ? 'var(--bad)' : 'var(--gray)', to: 'reports' })}</div>
@@ -64,7 +64,7 @@ export async function renderAdminDashboard(view) {
             <td><div class="row" style="justify-content:flex-end;flex-wrap:nowrap"><button class="ok sm" data-ap="${r.id}" aria-label="${t('approveBtn')}" data-tip="${t('approveBtn')}">${icon('check')}</button><button class="bad sm" data-rj="${r.id}" aria-label="${t('rejectBtn')}" data-tip="${t('rejectBtn')}">${icon('x')}</button><button class="ghost sm" data-det="${r.id}" aria-label="${t('rg.details')}" data-tip="${t('rg.details')}">${icon('eye')}</button></div></td></tr>`).join('')}</tbody></table></div>`
           : empty({ ic: 'userCheck', title: t('ad.noPendingT'), text: t('ad.noPending') })}</section>
       <section class="card"><div class="card-h"><h3>${icon('pie')} ${t('ad.analytics')}</h3><button class="link" data-go="reports">${t('nav.reports')}</button></div>
-        ${donut([{ label: t('ad.s.review'), value: st('pending'), color: '#FBBF24' }, { label: t('st.approved'), value: st('approved'), color: '#34D399' }, { label: t('st.changes_requested'), value: st('changes_requested'), color: '#FB923C' }, { label: t('st.rejected'), value: st('rejected'), color: '#F87171' }], t('rResearch'))}
+        ${donut([{ label: t('ad.s.review'), value: st('pending'), color: 'var(--amber)' }, { label: t('st.approved'), value: st('approved'), color: 'var(--ok)' }, { label: t('st.changes_requested'), value: st('changes_requested'), color: 'var(--orange)' }, { label: t('st.rejected'), value: st('rejected'), color: 'var(--bad)' }], t('rResearch'))}
         <div class="divider"></div><div class="row small mute" style="gap:16px"><span>${t('rSubmissions')}: <b style="color:var(--ink)">${rep.totals.submissions}</b></span><span>${t('rAvg')}: <b style="color:var(--ink)">${rep.averageGrade ?? '—'}</b></span><span>${t('rOverdue')}: <b style="color:var(--ink)">${rep.totals.overdue}</b></span></div></section></div>
     <div class="grid g-main" style="margin-bottom:18px;align-items:start">
       <section class="card"><div class="card-h"><h3>${icon('fileText')} ${t('ad.recentResearch')}</h3><button class="link" data-go="research">${t('viewAll')} ${icon('arrow')}</button></div>

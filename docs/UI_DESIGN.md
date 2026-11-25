@@ -4,7 +4,12 @@
 The redesign touched **only the front end** (`public/`) and one line of `server.js` (MIME types for the self-hosted fonts).
 No API, database schema, permission or business rule changed; `npm test` (457 checks) passes unchanged, and the browser scenarios exercise every flow through the new UI.
 
-## Premium dark theme (current)
+## Calm theme (current)
+Default **light** theme: background `#F5F7FA`, white cards, slate text `#1E293B` / `#64748B`, one muted blue accent `#2F6FA8`, borders `#E6EAF0`; no gradients or glows.
+An optional **dark** theme (`#0F1620` / `#151E29`, softened accent `#6AA0D2`) is available from the moon/sun button in the top bar, the login screen or Settings → Appearance, and is remembered per browser.
+Both themes come from the same CSS tokens (`:root` and `:root[data-theme=dark]`); tints use `rgb(var(--x) / alpha)`.
+
+## Premium dark theme (previous iteration)
 Background `#0B1220`, sidebar `#0B1724`, surfaces `#111E2D` / `#122235` / `#182B40`, primary blue `#4D9DE0`, teal `#38C6B0`, soft cyan `#78DCE8`, text `#F1F5F9` / `#94A3B8`, border `rgba(148,163,184,.12)`.
 The blue→teal gradient is used only for primary buttons, the selected navigation item, the current timeline stage, featured stat cards and progress bars.
 Status colours: active/approved green, pending amber, changes requested orange, under review blue, completed teal, rejected/overdue red, inactive/closed gray — always with a dot and a text label.

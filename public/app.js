@@ -1,5 +1,5 @@
 // App shell: auth screens, sidebar, top bar, role-based routing.
-import { $, esc, t, fmtDate, state, api, act, setRender, notifText, lang, setLang, roleLabel } from './core.js';
+import { $, esc, t, fmtDate, state, api, act, setRender, notifText, lang, setLang, roleLabel, theme, setTheme } from './core.js';
 import { icon, avatar, bindDropdowns, closeDropdowns, loading, errorBox, setCrumbs, enhanceTables, enhanceForms } from './ui.js';
 import { renderLogin, renderRegister, renderForcedPassword } from './views/auth.js';
 import { renderResearchList, renderDetail, renderSubmit, renderStudents } from './views/research.js';
@@ -47,6 +47,7 @@ function shellHtml(u) {
         <nav class="crumbs" id="crumbs" aria-label="breadcrumb"></nav>
         ${u.role !== 'admin' ? `<form class="search top-search" id="gs" role="search">${icon('search')}<input id="gq" type="search" placeholder="${t('searchPh')}" aria-label="${t('searchPh')}"><kbd aria-hidden="true">/</kbd></form>` : ''}
         <div class="top-actions">
+          <button class="icon" id="theme" data-tip="${t(theme === 'dark' ? 'th.light' : 'th.dark')}" aria-label="${t(theme === 'dark' ? 'th.light' : 'th.dark')}">${icon(theme === 'dark' ? 'sun' : 'moon')}</button>
           <button class="icon" id="lang" data-tip="${t('language')}" aria-label="${t('language')}">${icon('globe')}<span class="lang-label small">${lang === 'ar' ? 'EN' : 'ع'}</span></button>
           <div class="dd"><button class="icon bell" data-dd="nmenu" id="bell" data-tip="${t('nav.notifications')}" aria-label="${t('nav.notifications')}">${icon('bell')}<span class="dot" id="bdot" hidden></span></button>
             <div class="dd-menu wide" id="nmenu" hidden></div></div>
@@ -68,6 +69,7 @@ function bindShell(u) {
   $('#menu').onclick = () => shell.classList.add('drawer');
   $('#ov').onclick = () => shell.classList.remove('drawer');
   $('#lang').onclick = () => setLang(lang === 'ar' ? 'en' : 'ar');
+  $('#theme').onclick = () => { state.shellKey = null; setTheme(theme === 'dark' ? 'light' : 'dark'); };
   $('#logout').onclick = act(async () => {
     await api('POST', '/logout'); localStorage.removeItem('token');
     Object.assign(state, { user: null, screen: null, tab: null, openId: null, openStageId: null, stageForm: null, thread: null, expanded: null, notifs: [], shellKey: null, researchTab: null }); render();
@@ -114,7 +116,7 @@ async function render() {
   const [notifs, badge] = await Promise.all(extra);
   if (mine !== seq) return;
   state.notifs = notifs; state.pendingReviews = u.role === 'supervisor' ? badge : 0; state.pendingRegs = u.role === 'admin' ? badge : 0;
-  const key = `${u.id}|${lang}`;
+  const key = `${u.id}|${lang}|${theme}`;
   if (state.shellKey !== key || !$('#view')) { app.innerHTML = shellHtml(u); state.shellKey = key; bindShell(u); }
   updateChrome(u);
   setCrumbs([{ label: t('nav.' + (NAV[u.role].find(x => x[0] === state.tab)?.[2] ?? 'dashboard')) }]);

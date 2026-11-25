@@ -11,6 +11,7 @@ export const EXTRA = {
     'qa.addUser': 'Create a supervisor or student account', 'qa.course': 'Add a course and its team rules', 'qa.approve': 'Approve registrations', 'qa.approveD': '{n} waiting', 'qa.import': 'Import students', 'qa.importD': 'Add approved University IDs in bulk', 'qa.reports': 'View reports', 'qa.reportsD': 'Progress, deadlines and supervisors', 'qa.researchD': 'Browse every research project',
     'sup.d.pending': 'Submissions waiting for you', 'sup.d.topics': '{n} topics awaiting decision', 'sup.d.teams': 'Teams you supervise', 'sup.d.upcoming': 'Deadlines in the next 14 days', 'sup.d.approved': 'Stage submissions approved', 'sup.d.changes': 'Waiting for students to resubmit', 'sup.d.late': 'Late or missing after the deadline', 'sup.d.stages': '{p}% of assigned stages approved',
     'sd.d.progress': '{a} of {t} stages approved', 'sd.d.tasks': 'Actions waiting for you',
+    'th.title': 'Appearance', 'th.sub': 'A calm light theme is the default; the dark theme is easier at night.', 'th.lightN': 'Light', 'th.darkN': 'Dark', 'th.light': 'Switch to light theme', 'th.dark': 'Switch to dark theme',
   },
   ar: {
     brand: 'إدارة الأبحاث', 'ws.admin': 'مدير النظام', 'ws.supervisor': 'مشرف', 'ws.student': 'طالب',
@@ -23,5 +24,6 @@ export const EXTRA = {
     'qa.addUser': 'إنشاء حساب مشرف أو طالب', 'qa.course': 'إضافة مقرر وقواعد فرقه', 'qa.approve': 'الموافقة على التسجيلات', 'qa.approveD': '{n} بالانتظار', 'qa.import': 'استيراد الطلاب', 'qa.importD': 'إضافة أرقام جامعية معتمدة دفعة واحدة', 'qa.reports': 'عرض التقارير', 'qa.reportsD': 'التقدّم والمواعيد والمشرفون', 'qa.researchD': 'تصفّح كل المشاريع البحثية',
     'sup.d.pending': 'تسليمات بانتظارك', 'sup.d.topics': '{n} موضوع بانتظار القرار', 'sup.d.teams': 'الفرق التي تشرف عليها', 'sup.d.upcoming': 'مواعيد خلال 14 يوماً', 'sup.d.approved': 'تسليمات مراحل مقبولة', 'sup.d.changes': 'بانتظار إعادة تسليم الطلاب', 'sup.d.late': 'متأخرة أو ناقصة بعد الموعد', 'sup.d.stages': '{p}% من المراحل المسندة مقبولة',
     'sd.d.progress': '{a} من {t} مراحل مقبولة', 'sd.d.tasks': 'إجراءات بانتظارك',
+    'th.title': 'المظهر', 'th.sub': 'المظهر الفاتح الهادئ هو الافتراضي، والداكن أريح للعين ليلاً.', 'th.lightN': 'فاتح', 'th.darkN': 'داكن', 'th.light': 'التبديل إلى المظهر الفاتح', 'th.dark': 'التبديل إلى المظهر الداكن',
   },
 };

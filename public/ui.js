@@ -58,6 +58,8 @@ const P = {
   bookPlus: '<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/><path d="M12 7v6"/><path d="M9 10h6"/>',
   sortv: '<path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>', up: '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>', dn: '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>',
   fileText: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+  moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
   sparkle: '<path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z"/>',
 };
 const FLIP = new Set(['left', 'right', 'arrow', 'send', 'logout']);
@@ -231,8 +233,8 @@ export const statCard = ({ ic, label, value, desc = '', accent = 'var(--primary)
 export function donut(segs, center = '') {
   const total = segs.reduce((a, s) => a + s.value, 0), R = 52, C = 2 * Math.PI * R;
   let off = 0;
-  const arcs = total ? segs.filter(s => s.value).map(s => { const len = s.value / total * C; const el = `<circle r="${R}" cx="64" cy="64" fill="none" stroke="${s.color}" stroke-width="16" stroke-dasharray="${len - 2} ${C - len + 2}" stroke-dashoffset="${-off}" stroke-linecap="butt"/>`; off += len; return el; }).join('') : '';
-  return `<div class="donut-wrap"><div class="donut" role="img" aria-label="${esc(segs.map(s => `${s.label}: ${s.value}`).join(', '))}"><svg viewBox="0 0 128 128"><circle r="${R}" cx="64" cy="64" fill="none" stroke="rgba(148,163,184,.12)" stroke-width="16"/>${arcs}</svg>
+  const arcs = total ? segs.filter(s => s.value).map(s => { const len = s.value / total * C; const el = `<circle r="${R}" cx="64" cy="64" fill="none" style="stroke:${s.color}" stroke-width="16" stroke-dasharray="${len - 2} ${C - len + 2}" stroke-dashoffset="${-off}" stroke-linecap="butt"/>`; off += len; return el; }).join('') : '';
+  return `<div class="donut-wrap"><div class="donut" role="img" aria-label="${esc(segs.map(s => `${s.label}: ${s.value}`).join(', '))}"><svg viewBox="0 0 128 128"><circle r="${R}" cx="64" cy="64" fill="none" style="stroke:rgb(var(--g) / .14)" stroke-width="16"/>${arcs}</svg>
     <div class="c"><div><b>${total}</b><span>${esc(center)}</span></div></div></div>
     <div class="legend">${segs.map(s => `<div class="li"><span class="sw" style="background:${s.color}"></span><span>${esc(s.label)}</span><span><b>${s.value}</b><span class="pc">${total ? Math.round(s.value / total * 100) : 0}%</span></span></div>`).join('')}</div></div>`;
 }
