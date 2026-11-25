@@ -47,6 +47,18 @@ const P = {
   grid: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>',
   paperclip: '<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
   flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>',
+  dash: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+  more: '<circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>',
+  userPlus: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>',
+  userCheck: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/>',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
+  activity: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
+  pie: '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>',
+  idcard: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M15 8h2"/><path d="M15 12h2"/><path d="M7 16h10"/>',
+  bookPlus: '<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/><path d="M12 7v6"/><path d="M9 10h6"/>',
+  sortv: '<path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>', up: '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>', dn: '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>',
+  fileText: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
+  sparkle: '<path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z"/>',
 };
 const FLIP = new Set(['left', 'right', 'arrow', 'send', 'logout']);
 export const icon = (name, cls = '') => `<svg class="i ${FLIP.has(name) ? 'i-flip' : ''} ${cls}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${P[name] ?? P.info}</svg>`;
@@ -72,7 +84,8 @@ export const remBadge = deadline => { const r = remaining(deadline); return dead
 
 export const pageHeader = ({ title, sub = '', actions = '' }) => `<div class="page-h"><div><h1>${title}</h1>${sub ? `<p>${sub}</p>` : ''}</div><div class="actions">${actions}</div></div>`;
 export const empty = ({ ic = 'inbox', title, text = '', action = '' }) => `<div class="empty"><div class="ic">${icon(ic)}</div><h4>${title}</h4>${text ? `<p>${text}</p>` : ''}${action}</div>`;
-export const loading = () => `<div class="spinner" role="status" aria-label="${t('loading')}"></div>`;
+export const loading = () => `<div role="status" aria-label="${t('loading')}" aria-busy="true"><div class="skel h"></div><div class="skel" style="width:24%"></div>
+  <div class="stats four" style="margin-top:22px">${'<div class="skel box"></div>'.repeat(4)}</div><div class="grid g-main"><div class="skel tall"></div><div class="skel tall"></div></div></div>`;
 export const errorBox = (msg, retry = true) => `<div class="card"><div class="empty"><div class="ic" style="background:var(--bad-bg);color:var(--bad-ink)">${icon('alert')}</div><h4>${t('err.title')}</h4><p>${esc(msg)}</p>${retry ? `<button data-retry>${icon('refresh')} ${t('err.retry')}</button>` : ''}</div></div>`;
 export const tabsHtml = (items, active) => `<div class="tabs" role="tablist">${items.map(i => `<button role="tab" aria-selected="${i.key === active}" class="${i.key === active ? 'on' : ''}" data-tabk="${i.key}">${i.label}${i.count != null ? `<span class="count">${i.count}</span>` : ''}</button>`).join('')}</div>`;
 
@@ -206,3 +219,75 @@ export function bindDateFields(root) {
     b.onclick = () => { nat.value = ISO.test(txt.value) ? txt.value : ''; try { nat.showPicker(); } catch { nat.focus(); } };
   });
 }
+
+// ---------- Premium stat card ----------
+// accent: CSS color (var(--…)); to: data-go target for navigation (real page); desc: one-line explanation
+export const statCard = ({ ic, label, value, desc = '', accent = 'var(--primary)', to = '', feature = false }) =>
+  `<${to ? 'button' : 'div'} class="stat big ${to ? 'click' : ''} ${feature ? 'feature' : ''}" style="--ac:${accent}" ${to ? `data-go="${to}"` : ''}>
+    <div class="top"><span class="ic">${icon(ic)}</span>${to ? `<span class="mute">${icon('arrow')}</span>` : ''}</div>
+    <div><b>${value}</b><span class="l">${label}</span>${desc ? `<span class="d">${desc}</span>` : ''}</div></${to ? 'button' : 'div'}>`;
+
+// ---------- Donut chart (SVG, real values) ----------
+export function donut(segs, center = '') {
+  const total = segs.reduce((a, s) => a + s.value, 0), R = 52, C = 2 * Math.PI * R;
+  let off = 0;
+  const arcs = total ? segs.filter(s => s.value).map(s => { const len = s.value / total * C; const el = `<circle r="${R}" cx="64" cy="64" fill="none" stroke="${s.color}" stroke-width="16" stroke-dasharray="${len - 2} ${C - len + 2}" stroke-dashoffset="${-off}" stroke-linecap="butt"/>`; off += len; return el; }).join('') : '';
+  return `<div class="donut-wrap"><div class="donut" role="img" aria-label="${esc(segs.map(s => `${s.label}: ${s.value}`).join(', '))}"><svg viewBox="0 0 128 128"><circle r="${R}" cx="64" cy="64" fill="none" stroke="rgba(148,163,184,.12)" stroke-width="16"/>${arcs}</svg>
+    <div class="c"><div><b>${total}</b><span>${esc(center)}</span></div></div></div>
+    <div class="legend">${segs.map(s => `<div class="li"><span class="sw" style="background:${s.color}"></span><span>${esc(s.label)}</span><span><b>${s.value}</b><span class="pc">${total ? Math.round(s.value / total * 100) : 0}%</span></span></div>`).join('')}</div></div>`;
+}
+
+// ---------- Sortable data (state-driven, for paginated tables) ----------
+// sort = { key, dir: 1|-1 }; get = { key: row => value }
+export function sortRows(rows, sort, get = {}) {
+  if (!sort?.key) return rows;
+  const f = get[sort.key] ?? (r => r[sort.key]);
+  return [...rows].sort((a, b) => { const x = f(a) ?? '', y = f(b) ?? ''; return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true })) * sort.dir; });
+}
+export const th = (label, key, sort) => key ? `<th data-sort="${key}" ${sort?.key === key ? `aria-sort="${sort.dir > 0 ? 'ascending' : 'descending'}"` : ''} tabindex="0">${label}<span class="sort">${icon(sort?.key === key ? (sort.dir > 0 ? 'up' : 'dn') : 'sortv')}</span></th>` : `<th>${label}</th>`;
+export function bindSort(root, stateKey, rerender) {
+  root.querySelectorAll('th[data-sort]').forEach(h => {
+    const go = () => { const cur = state[stateKey]; state[stateKey] = { key: h.dataset.sort, dir: cur?.key === h.dataset.sort ? -cur.dir : 1 }; rerender(); };
+    h.onclick = go; h.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } };
+  });
+}
+// Client-side sorting for small, non-paginated tables (whole table is in the DOM).
+export function enhanceTables(root) {
+  root.querySelectorAll('table').forEach(tbl => {
+    if (tbl.dataset.enhanced || tbl.querySelector('th[data-sort]') || tbl.querySelector('.exprow')) return;
+    const heads = [...tbl.querySelectorAll('thead th')], body = tbl.tBodies[0];
+    if (!heads.length || !body || body.rows.length < 3) return;
+    tbl.dataset.enhanced = '1';
+    heads.forEach((h, i) => {
+      if (!h.textContent.trim()) return;
+      h.dataset.sort = String(i); h.tabIndex = 0; h.insertAdjacentHTML('beforeend', `<span class="sort">${icon('sortv')}</span>`);
+      const go = () => {
+        const dir = h.getAttribute('aria-sort') === 'ascending' ? -1 : 1;
+        heads.forEach(x => { x.removeAttribute('aria-sort'); const s = x.querySelector('.sort'); if (s) s.innerHTML = icon('sortv'); });
+        h.setAttribute('aria-sort', dir > 0 ? 'ascending' : 'descending'); h.querySelector('.sort').innerHTML = icon(dir > 0 ? 'up' : 'dn');
+        const val = r => { const c = r.cells[i]; const t = (c?.dataset.v ?? c?.textContent ?? '').trim(); const n = parseFloat(t.replace(/[^\d.-]/g, '')); return /^[\d.\s/%-]+$/.test(t) && !Number.isNaN(n) ? n : t; };
+        [...body.rows].sort((a, b) => { const x = val(a), y = val(b); return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true })) * dir; }).forEach(r => body.appendChild(r));
+      };
+      h.onclick = go; h.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } };
+    });
+  });
+}
+
+// ---------- Forms: required markers + searchable checklists ----------
+export function enhanceForms(root) {
+  root.querySelectorAll('input[required],select[required],textarea[required]').forEach(i => { if (i.id) root.querySelector(`label[for="${i.id}"]`)?.classList.add('req'); });
+  root.querySelectorAll('.checks').forEach(box => {
+    if (box.dataset.enhanced || box.querySelectorAll('label').length < 7) return;
+    box.dataset.enhanced = '1';
+    const f = document.createElement('div'); f.className = 'search checks-filter';
+    f.innerHTML = `${icon('search')}<input type="search" placeholder="${t('filterList')}" aria-label="${t('filterList')}">`;
+    box.before(f);
+    f.querySelector('input').oninput = e => { const q = e.target.value.trim().toLowerCase(); box.querySelectorAll('label').forEach(l => { l.style.display = !q || l.textContent.toLowerCase().includes(q) ? '' : 'none'; }); };
+  });
+}
+
+// ---------- Row action menu (kebab) ----------
+// items: [{ label, ic, attrs, danger }] — attrs are data-* attributes the page binds to real actions
+let ddSeq = 0;
+export const rowMenu = items => { const id = `rm${++ddSeq}`; return `<div class="dd"><button class="ghost icon kebab" data-dd="${id}" aria-label="${t('actions')}" data-tip="${t('actions')}">${icon('more')}</button>
+  <div class="dd-menu" id="${id}" hidden>${items.map(x => `<button ${x.attrs} class="${x.danger ? 'danger' : ''}">${icon(x.ic)} ${esc(x.label)}</button>`).join('')}</div></div>`; };

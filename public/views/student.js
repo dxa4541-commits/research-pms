@@ -1,6 +1,6 @@
 // Student views: dashboard, tasks (derived action items), stages timeline, grades, and the team page.
 import { $, esc, t, badge, fmtDate, fmtDay, state, api, act, toast, render, notifText } from '../core.js';
-import { icon, avatar, num, progress, remBadge, remaining, pageHeader, empty, setCrumbs, confirmDialog, askText, go } from '../ui.js';
+import { icon, avatar, statCard, num, progress, remBadge, remaining, pageHeader, empty, setCrumbs, confirmDialog, askText, go } from '../ui.js';
 import { renderResearchStages, tlState, stateBadge } from './stages.js';
 import { notifMeta } from './notifications.js';
 
@@ -52,6 +52,10 @@ export async function renderStudentDashboard(view) {
   view.innerHTML = `<section class="hero"><div class="grow"><h1>${t('sd.welcome', { n: esc(firstName) })}</h1><p>${top ? t('sd.needAction', { n: action.length }) : t('sd.allGood')}</p>
       <div>${d.student.university_id ? `<span class="chip">${icon('user')}<span dir="ltr">${esc(d.student.university_id)}</span></span>` : ''}${d.courses.map(c => `<span class="chip">${icon('book')}${esc(c.name)}</span>`).join('')}</div></div>
       ${top?.go ? `<button class="teal" id="topAct">${esc(top.title)} ${icon('arrow')}</button>` : ''}</section>
+    <div class="stats four">${statCard({ ic: 'activity', label: t('sdProgress'), value: r ? `${r.progress.percent ?? 0}%` : '—', desc: r ? t('sd.d.progress', { a: r.progress.approved, t: r.progress.total }) : t('sdNoResearch').split('.')[0], accent: 'var(--teal)', feature: true, to: r ? 'stagesS' : '' })}
+      ${statCard({ ic: 'tasks', label: t('nav.tasks'), value: action.length, desc: t('sd.d.tasks'), accent: action.length ? 'var(--amber)' : 'var(--ok)', to: 'tasks' })}
+      ${statCard({ ic: 'calendar', label: t('sdDeadlines'), value: d.upcoming.length, desc: d.upcoming[0] ? `${esc(d.upcoming[0].stage)} · ${fmtDay(d.upcoming[0].deadline)}` : t('sdNoDeadlines'), accent: 'var(--cyan)', to: 'stagesS' })}
+      ${statCard({ ic: 'award', label: t('sdAccum'), value: r ? `${num(r.totals.earned)}<span class="mute" style="font-size:.95rem"> / ${num(r.totals.total_max)}</span>` : '—', desc: r?.final_grade != null ? `${t('sdFinal')}: ${r.final_grade}/100` : t('gr.sub'), accent: '#9B7BEA', to: 'grades' })}</div>
     ${action.length ? `<div class="alert warn" style="margin-bottom:20px">${icon('alert')}<p><b>${t('sd.actionTitle')}</b> — ${action.slice(0, 3).map(k => esc(k.title)).join(' · ')}</p></div>` : ''}
     <div class="grid g-main"><div class="stack">
       <section class="card"><div class="card-h"><h3>${icon('book')} ${t('sdResearch')}</h3>${r ? badge(r.status) : ''}</div>
@@ -75,7 +79,7 @@ export async function renderStudentDashboard(view) {
         ${d.notifications.slice(0, 4).map(n => { const m = notifMeta(n); return `<div class="todo"><span class="ic ${m.tone}">${icon(m.icon)}</span><div class="t"><span class="small">${esc(notifText(n.message))}</span><span class="tiny mute">${fmtDate(n.created_at)}</span></div></div>`; }).join('') || `<p class="mute small">${t('noNotifs')}</p>`}</section>
       <section class="card"><h3>${t('sd.quick')}</h3><div class="stack" style="gap:8px"><button class="ghost" data-go="topic">${icon('plus')} ${t('nav.topic')}</button><button class="ghost" data-go="myTeam">${icon('users')} ${t('nav.team')}</button><button class="ghost" data-go="messages">${icon('message')} ${t('nav.messages')}</button><button class="ghost" data-go="grades">${icon('award')} ${t('nav.grades')}</button></div></section>
     </div></div>`;
-  view.querySelectorAll('[data-go]').forEach(b => b.onclick = () => go(b.dataset.go));
+  view.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { if (b.dataset.go === 'stagesS' && r) state.sRes = r.id; go(b.dataset.go); });
   bindTasks(view, tasks.filter(k => k.status !== 'done').slice(0, 4));
   $('#topAct')?.addEventListener('click', () => top.go());
   $('#openR')?.addEventListener('click', () => openResearch(r.id));

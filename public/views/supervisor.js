@@ -1,6 +1,6 @@
 // Supervisor views: dashboard, submissions & reviews queue, stage management, grades overview and reports.
 import { $, esc, t, badge, toast, fmtDate, fmtDay, state, api, downloadPath, act, courseOpts, render, notifText } from '../core.js';
-import { icon, avatar, dateField, bindDateFields, num, progress, remBadge, pageHeader, empty, setCrumbs, confirmDialog, tabsHtml, paginate, pagerHtml, bindPager, go } from '../ui.js';
+import { icon, avatar, statCard, th, sortRows, bindSort, dateField, bindDateFields, num, progress, remBadge, pageHeader, empty, setCrumbs, confirmDialog, tabsHtml, paginate, pagerHtml, bindPager, go } from '../ui.js';
 import { renderResearchStages, stateBadge } from './stages.js';
 import { notifMeta } from './notifications.js';
 
@@ -16,8 +16,11 @@ export async function renderDashboard(view) {
   const T = d.totals, activity = state.notifs.filter(n => ['submission', 'message'].includes(notifMeta(n).cat)).slice(0, 6);
   view.innerHTML = `${pageHeader({ title: t('nav.dashboard'), sub: t('sup.sub', { n: state.user.name }), actions: `<button class="ghost" data-go="review">${icon('inbox')} ${t('nav.review')}</button><button data-go="newstage">${icon('plus')} ${t('newStage')}</button>` })}
     ${T.topics_pending ? `<div class="alert warn" style="margin-bottom:16px">${icon('alert')}<p><b>${t('sup.topicsPending', { n: T.topics_pending })}</b> <button class="link" data-go="research">${t('sup.goResearch')}</button></p></div>` : ''}
-    <div class="stats">${tile('book', '', t('dTotalResearch'), T.research, 'research')}${tile('users', 'teal', t('dTeams'), T.teams, 'teams')}${tile('inbox', T.awaiting_review ? 'warn' : '', t('sup.pending'), T.awaiting_review, 'review')}
-      ${tile('checkc', 'ok', t('dApproved'), T.approved, 'review')}${tile('edit', T.needs_changes ? 'warn' : '', t('dChanges'), T.needs_changes, 'review')}${tile('alert', T.late ? 'bad' : '', t('dLate'), T.late, 'reports')}${tile('calendar', '', t('sup.upcoming'), d.upcoming.length, 'stages')}</div>
+    <div class="stats four">${statCard({ ic: 'inbox', label: t('sup.pending'), value: T.awaiting_review, desc: t('sup.d.pending'), accent: 'var(--amber)', to: 'review', feature: true })}
+      ${statCard({ ic: 'book', label: t('dTotalResearch'), value: T.research, desc: t('sup.d.topics', { n: T.topics_pending }), accent: 'var(--primary)', to: 'research' })}${statCard({ ic: 'users', label: t('dTeams'), value: T.teams, desc: t('sup.d.teams'), accent: 'var(--teal)', to: 'teams' })}
+      ${statCard({ ic: 'calendar', label: t('sup.upcoming'), value: d.upcoming.length, desc: t('sup.d.upcoming'), accent: 'var(--cyan)', to: 'stages' })}${statCard({ ic: 'checkc', label: t('dApproved'), value: T.approved, desc: t('sup.d.approved'), accent: 'var(--ok)', to: 'review' })}
+      ${statCard({ ic: 'edit', label: t('dChanges'), value: T.needs_changes, desc: t('sup.d.changes'), accent: 'var(--orange)', to: 'review' })}${statCard({ ic: 'alert', label: t('dLate'), value: T.late, desc: t('sup.d.late'), accent: T.late ? 'var(--bad)' : 'var(--gray)', to: 'reports' })}
+      ${statCard({ ic: 'layers', label: t('dStages'), value: T.stages, desc: t('sup.d.stages', { p: d.progress.completion_percent ?? 0 }), accent: '#9B7BEA', to: 'stages' })}</div>
     <div class="grid g-main"><div class="stack">
       <section class="card"><div class="card-h"><h3>${icon('inbox')} ${t('sup.needReview')}</h3><button class="link" data-go="review">${t('viewAll')}</button></div>
         ${d.awaiting.length ? d.awaiting.map(a => `<div class="todo"><span class="ic warn">${icon('upload')}</span><div class="t"><b>${esc(a.label)}</b><span class="small mute">${esc(a.stage)} · ${fmtDate(a.submitted_at)} ${a.late ? `<span class="badge overdue">${t('late')}</span>` : ''}</span></div>
@@ -44,10 +47,10 @@ export async function renderReviewQueue(view) {
   const items = details.flatMap(d => d.targets.map(x => ({ ...x, stage_id: d.stage.id, stage: d.stage.name, deadline: d.stage.deadline })));
   const f = state.qfilter ?? 'review';
   const F = { review: x => x.status === 'submitted', changes: x => x.status === 'changes_requested', approved: x => x.status === 'approved', late: x => x.late, missing: x => x.missing };
-  const list = items.filter(F[f]).sort((a, b) => (b.submitted_at ?? '').localeCompare(a.submitted_at ?? ''));
+  const list = sortRows(items.filter(F[f]).sort((a, b) => (b.submitted_at ?? '').localeCompare(a.submitted_at ?? '')), state.qsort, { submitted: x => x.submitted_at ?? '' });
   const page = state.qpage ?? 1;
   view.innerHTML = `${pageHeader({ title: t('nav.review'), sub: t('rq.sub') })}${tabsHtml(Object.keys(F).map(k => ({ key: k, label: t('rq.' + k), count: items.filter(F[k]).length })), f)}
-    <div class="card">${list.length ? `<div class="table-wrap"><table class="rt"><thead><tr><th>${t('target')}</th><th>${t('rl.stage')}</th><th>${t('status')}</th><th>${t('attempts')}</th><th>${t('submittedAt')}</th><th>${t('grade')}</th><th></th></tr></thead><tbody>
+    <div class="card">${list.length ? `<div class="table-wrap"><table class="rt"><thead><tr>${th(t('target'), 'label', state.qsort)}${th(t('rl.stage'), 'stage', state.qsort)}${th(t('status'), 'status', state.qsort)}${th(t('attempts'), 'attempts', state.qsort)}${th(t('submittedAt'), 'submitted', state.qsort)}${th(t('grade'), 'score', state.qsort)}<th><span class="sr-only">${t('actions')}</span></th></tr></thead><tbody>
       ${paginate(list, page, 10).map(x => `<tr class="click ${x.late ? 'late' : ''}" data-s="${x.stage_id}" data-r="${x.research_id}"><td data-label="${t('target')}"><div class="member" style="padding:0">${avatar(x.label)}<div class="t"><b>${esc(x.label)}</b><div class="tiny mute">${esc(x.title)}</div></div></div></td><td data-label="${t('rl.stage')}">${esc(x.stage)}</td>
         <td data-label="${t('status')}">${badge(x.status)}${x.late ? ` <span class="badge overdue">${t('late')}</span>` : ''}</td><td data-label="${t('attempts')}">${x.attempts}</td><td data-label="${t('submittedAt')}" class="small">${x.submitted_at ? fmtDate(x.submitted_at) : '—'}</td>
         <td data-label="${t('grade')}">${x.score != null ? num(x.score) : '—'}</td><td><button class="sm" data-rev="${x.stage_id}:${x.research_id}">${t('review')} ${icon('arrow')}</button></td></tr>`).join('')}</tbody></table></div>${pagerHtml(list.length, page, 10)}`
@@ -55,7 +58,7 @@ export async function renderReviewQueue(view) {
   view.querySelectorAll('[data-tabk]').forEach(b => b.onclick = () => { state.qfilter = b.dataset.tabk; state.qpage = 1; render(); });
   view.querySelectorAll('tr.click').forEach(tr => tr.onclick = e => { if (!e.target.closest('button')) openStage(Number(tr.dataset.s), Number(tr.dataset.r)); });
   view.querySelectorAll('[data-rev]').forEach(b => { const [s, r] = b.dataset.rev.split(':'); b.onclick = () => openStage(Number(s), Number(r)); });
-  bindPager(view, p => { state.qpage = p; render(); });
+  bindPager(view, p => { state.qpage = p; render(); }); bindSort(view, 'qsort', render);
 }
 
 // ---------- Grades overview ----------

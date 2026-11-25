@@ -1,6 +1,6 @@
 // Research projects: list with search/filters, details with tabs, topic registration, "my students".
 import { $, esc, t, tErr, badge, fmtDate, fmtDay, state, api, apiUpload, download, downloadPath, readFile, act, courseOpts, render, toast, notifText } from '../core.js';
-import { icon, avatar, num, progress, remBadge, remaining, pageHeader, tabsHtml, empty, setCrumbs, paginate, pagerHtml, bindPager, confirmDialog, dropzoneHtml, bindDropzone, fmtBytes, go } from '../ui.js';
+import { icon, avatar, th, sortRows, bindSort, num, progress, remBadge, remaining, pageHeader, tabsHtml, empty, setCrumbs, paginate, pagerHtml, bindPager, confirmDialog, dropzoneHtml, bindDropzone, fmtBytes, go } from '../ui.js';
 import { renderResearchStages, stateBadge, tlState } from './stages.js';
 
 const PER = 10;
@@ -16,7 +16,8 @@ export async function renderResearchList(view) {
   const pct = r => r.stages_total ? r.stages_approved / r.stages_total * 100 : 0;
   const rows = all.filter(r => (!course || r.course === course) && (!team || r.team === team) && (!sup || r.supervisor === sup)
     && (!prog || (prog === 'none' ? !r.stages_total || pct(r) === 0 : prog === 'done' ? r.stages_total && pct(r) === 100 : r.stages_total && pct(r) > 0 && pct(r) < 100)));
-  const pageRows = paginate(rows, page, PER);
+  const sorted = sortRows(rows, state.rlsort, { progress: pct, deadline: r => r.deadline ?? '9999' });
+  const pageRows = paginate(sorted, page, PER);
   const sel = (id, label, cur, opts) => `<div><label for="${id}" class="sr-only">${label}</label><select id="${id}" aria-label="${label}"><option value="">${label}</option>${opts.map(([v, l]) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>`;
   view.innerHTML = `${pageHeader({ title: t(isStudent() ? 'nav.myResearch' : 'nav.research'), sub: t('rl.sub', { n: rows.length }),
       actions: isStudent() ? `<button id="newtopic">${icon('plus')} ${t('nav.topic')}</button>` : '' })}
@@ -28,7 +29,7 @@ export async function renderResearchList(view) {
       ${isStudent() ? sel('fu', t('supervisor'), sup, uniq('supervisor').map(c => [c, c])) : ''}
       ${sel('fp', t('rl.progress'), prog, [['none', t('rl.p0')], ['going', t('rl.p1')], ['done', t('rl.p2')]])}
       ${(status || course || team || prog || sup || q) ? `<button class="ghost" id="clr">${icon('x')} ${t('rl.clear')}</button>` : ''}</div></div>
-    <div class="card">${rows.length ? `<div class="table-wrap"><table class="rt"><thead><tr><th>${t('title')}</th><th>${t('team')}</th><th>${t('course')}</th><th>${t(isStudent() ? 'supervisor' : 'student')}</th><th>${t('rl.stage')}</th><th>${t('rl.progress')}</th><th>${t('deadline')}</th><th>${t('status')}</th><th><span class="sr-only">${t('actions')}</span></th></tr></thead>
+    <div class="card">${rows.length ? `<div class="table-wrap"><table class="rt"><thead><tr>${th(t('title'), 'title', state.rlsort)}${th(t('team'), 'team', state.rlsort)}${th(t('course'), 'course', state.rlsort)}${th(t(isStudent() ? 'supervisor' : 'student'), isStudent() ? 'supervisor' : 'student', state.rlsort)}<th>${t('rl.stage')}</th>${th(t('rl.progress'), 'progress', state.rlsort)}${th(t('deadline'), 'deadline', state.rlsort)}${th(t('status'), 'status', state.rlsort)}<th><span class="sr-only">${t('actions')}</span></th></tr></thead>
       <tbody>${pageRows.map(r => `<tr class="click ${r.overdue ? 'late' : ''}" data-id="${r.id}"><td data-label="${t('title')}"><b>${esc(r.title)}</b></td>
         <td data-label="${t('team')}">${r.team ? esc(r.team) : `<span class="mute">${t('individual')}</span>`}</td><td data-label="${t('course')}">${esc(r.course)}</td>
         <td data-label="${t(isStudent() ? 'supervisor' : 'student')}">${esc(isStudent() ? r.supervisor : r.student)}</td><td data-label="${t('rl.stage')}" data-cs="${r.id}">${r.stages_total ? '<span class="skel" style="width:90px;display:inline-block"></span>' : '—'}</td>
@@ -43,7 +44,7 @@ export async function renderResearchList(view) {
   ['newtopic', 'newtopic2'].forEach(id => $('#' + id)?.addEventListener('click', () => go('topic')));
   view.querySelectorAll('tr.click').forEach(tr => tr.onclick = e => { if (!e.target.closest('button')) { state.openId = Number(tr.dataset.id); state.researchTab = null; render(); } });
   view.querySelectorAll('[data-open]').forEach(b => b.onclick = () => { state.openId = Number(b.dataset.open); state.researchTab = null; render(); });
-  bindPager(view, p => { state.rpage = p; render(); });
+  bindPager(view, p => { state.rpage = p; render(); }); bindSort(view, 'rlsort', render);
   // current stage of the visible rows (one request per visible row)
   for (const r of pageRows) if (r.stages_total) api('GET', `/research/${r.id}/stages`).then(d => {
     const cur = d.stages.find(e => !['done', 'closed'].includes(tlState(e))), cell = view.querySelector(`[data-cs="${r.id}"]`);

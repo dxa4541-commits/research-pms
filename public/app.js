@@ -1,6 +1,6 @@
 // App shell: auth screens, sidebar, top bar, role-based routing.
 import { $, esc, t, fmtDate, state, api, act, setRender, notifText, lang, setLang, roleLabel } from './core.js';
-import { icon, avatar, bindDropdowns, closeDropdowns, loading, errorBox, setCrumbs } from './ui.js';
+import { icon, avatar, bindDropdowns, closeDropdowns, loading, errorBox, setCrumbs, enhanceTables, enhanceForms } from './ui.js';
 import { renderLogin, renderRegister, renderForcedPassword } from './views/auth.js';
 import { renderResearchList, renderDetail, renderSubmit, renderStudents } from './views/research.js';
 import { renderTeams, renderReports, renderUsers, renderCourses, renderRegistrations, renderApprovedIds, renderAdminDashboard } from './views/admin.js';
@@ -10,12 +10,16 @@ import { renderMessages } from './views/messages.js';
 import { renderNotifications, notifMeta } from './views/notifications.js';
 import { renderSettings } from './views/settings.js';
 
-// ---------- Navigation per role (key, icon, label) ----------
-const NAV = {
-  student: [['studentDash', 'home', 'dashboard'], ['myResearch', 'book', 'myResearch'], ['stagesS', 'layers', 'stages'], ['myTeam', 'users', 'team'], ['tasks', 'tasks', 'tasks'], ['grades', 'award', 'grades'], ['messages', 'message', 'messages'], ['notifications', 'bell', 'notifications'], ['settings', 'settings', 'settings']],
-  supervisor: [['dashboard', 'home', 'dashboard'], ['research', 'book', 'research'], ['stages', 'layers', 'stages'], ['students', 'user', 'students'], ['teams', 'users', 'teams'], ['review', 'inbox', 'review'], ['grades', 'award', 'grades'], ['messages', 'message', 'messages'], ['notifications', 'bell', 'notifications'], ['reports', 'chart', 'reports'], ['settings', 'settings', 'settings']],
-  admin: [['adminDash', 'home', 'dashboard'], ['registrations', 'inbox', 'registrations'], ['ids', 'cap', 'ids'], ['users', 'users', 'users'], ['courses', 'book', 'courses'], ['reports', 'chart', 'reports'], ['notifications', 'bell', 'notifications'], ['settings', 'settings', 'settings']],
+// ---------- Navigation per role, grouped in sections: [section, [[key, icon, label], ...]] ----------
+const SECTIONS = {
+  student: [['overview', [['studentDash', 'dash', 'dashboard'], ['tasks', 'tasks', 'tasks']]], ['research', [['myResearch', 'book', 'myResearch'], ['stagesS', 'layers', 'stages'], ['grades', 'award', 'grades']]],
+    ['collab', [['myTeam', 'users', 'team'], ['messages', 'message', 'messages']]], ['account', [['notifications', 'bell', 'notifications'], ['settings', 'settings', 'settings']]]],
+  supervisor: [['overview', [['dashboard', 'dash', 'dashboard']]], ['research', [['research', 'book', 'research'], ['stages', 'layers', 'stages'], ['review', 'inbox', 'review'], ['grades', 'award', 'grades']]],
+    ['people', [['students', 'user', 'students'], ['teams', 'users', 'teams'], ['messages', 'message', 'messages']]], ['insights', [['reports', 'chart', 'reports']]], ['account', [['notifications', 'bell', 'notifications'], ['settings', 'settings', 'settings']]]],
+  admin: [['overview', [['adminDash', 'dash', 'dashboard']]], ['admission', [['registrations', 'userCheck', 'registrations'], ['ids', 'idcard', 'ids']]],
+    ['management', [['users', 'users', 'users'], ['courses', 'book', 'courses'], ['research', 'fileText', 'research']]], ['insights', [['reports', 'chart', 'reports']]], ['account', [['notifications', 'bell', 'notifications'], ['settings', 'settings', 'settings']]]],
 };
+const NAV = Object.fromEntries(Object.entries(SECTIONS).map(([r, secs]) => [r, secs.flatMap(x => x[1])]));
 const HIDDEN = { student: ['topic'], supervisor: [], admin: [] }; // routes reachable by buttons but not in the sidebar
 const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* storage blocked: preference only */ } };
@@ -29,12 +33,11 @@ const views = {
 let seq = 0;
 
 function shellHtml(u) {
-  const items = NAV[u.role];
   return `<a class="sr-only skip" href="#view">${t('skip')}</a>
   <div class="app ${state.collapsed ? 'collapsed' : ''}" id="shell">
     <aside class="sidebar" id="sb" aria-label="${t('appName')}">
-      <div class="sb-brand"><span class="sb-logo">${icon('cap')}</span><b>${t('appName')}</b></div>
-      <nav class="sb-nav" id="nav">${items.map(([k, ic, lbl]) => `<button data-tab="${k}" data-tip="${t('nav.' + lbl)}"><span aria-hidden="true">${icon(ic)}</span><span class="sb-label">${t('nav.' + lbl)}</span><span class="sb-badge" data-nb="${k}" hidden></span></button>`).join('')}</nav>
+      <div class="sb-brand"><span class="sb-logo">${icon('cap')}</span><div class="t"><b>${t('brand')}</b><span class="sb-role">${t('ws.' + u.role)}</span></div></div>
+      <nav class="sb-nav" id="nav">${SECTIONS[u.role].map(([sec, list]) => `<div class="sb-sec" role="presentation">${t('sec.' + sec)}</div>${list.map(([k, ic, lbl]) => `<button data-tab="${k}" data-tip="${t('nav.' + lbl)}"><span aria-hidden="true">${icon(ic)}</span><span class="sb-label">${t('nav.' + lbl)}</span><span class="sb-badge" data-nb="${k}" hidden></span></button>`).join('')}`).join('')}</nav>
       <div class="sb-foot"><button id="collapse" class="sb-collapse" data-tip="${t('collapse')}" aria-label="${t('collapse')}">${icon('left')}<span class="sb-label">${t('collapse')}</span></button></div>
     </aside>
     <div class="overlay" id="ov"></div>
@@ -42,7 +45,7 @@ function shellHtml(u) {
       <header class="topbar">
         <button class="icon menu-btn" id="menu" aria-label="${t('openMenu')}">${icon('menu')}</button>
         <nav class="crumbs" id="crumbs" aria-label="breadcrumb"></nav>
-        ${u.role !== 'admin' ? `<form class="search top-search" id="gs" role="search">${icon('search')}<input id="gq" type="search" placeholder="${t('searchPh')}" aria-label="${t('searchPh')}"></form>` : ''}
+        ${u.role !== 'admin' ? `<form class="search top-search" id="gs" role="search">${icon('search')}<input id="gq" type="search" placeholder="${t('searchPh')}" aria-label="${t('searchPh')}"><kbd aria-hidden="true">/</kbd></form>` : ''}
         <div class="top-actions">
           <button class="icon" id="lang" data-tip="${t('language')}" aria-label="${t('language')}">${icon('globe')}<span class="lang-label small">${lang === 'ar' ? 'EN' : 'ع'}</span></button>
           <div class="dd"><button class="icon bell" data-dd="nmenu" id="bell" data-tip="${t('nav.notifications')}" aria-label="${t('nav.notifications')}">${icon('bell')}<span class="dot" id="bdot" hidden></span></button>
@@ -69,6 +72,7 @@ function bindShell(u) {
     await api('POST', '/logout'); localStorage.removeItem('token');
     Object.assign(state, { user: null, screen: null, tab: null, openId: null, openStageId: null, stageForm: null, thread: null, expanded: null, notifs: [], shellKey: null, researchTab: null }); render();
   });
+  if (!window.__slash) { window.__slash = true; document.addEventListener('keydown', e => { if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) && $('#gq')) { e.preventDefault(); $('#gq').focus(); } }); }
   if ($('#gs')) $('#gs').onsubmit = e => { e.preventDefault(); state.q = $('#gq').value.trim(); go(u.role === 'student' ? 'myResearch' : 'research'); };
 }
 
@@ -131,6 +135,7 @@ async function render() {
     view.innerHTML = errorBox(e.message);
     view.querySelector('[data-retry]')?.addEventListener('click', render);
   }
+  enhanceTables(view); enhanceForms(view);
   // keep the heading outline valid (no skipped levels) without changing the visual style of the cards
   let prev = 0;
   view.querySelectorAll('h1,h2,h3,h4').forEach(h => { const L = +h.tagName[1]; if (h.closest('[hidden]')) { if (L > 2) { h.setAttribute('role', 'heading'); h.setAttribute('aria-level', '2'); } return; } const lvl = Math.min(L, prev + 1); prev = lvl; if (lvl !== L) { h.setAttribute('role', 'heading'); h.setAttribute('aria-level', String(lvl)); } });

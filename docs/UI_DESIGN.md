@@ -4,7 +4,16 @@
 The redesign touched **only the front end** (`public/`) and one line of `server.js` (MIME types for the self-hosted fonts).
 No API, database schema, permission or business rule changed; `npm test` (457 checks) passes unchanged, and the browser scenarios exercise every flow through the new UI.
 
-## Design tokens (`public/style.css`)
+## Premium dark theme (current)
+Background `#0B1220`, sidebar `#0B1724`, surfaces `#111E2D` / `#122235` / `#182B40`, primary blue `#4D9DE0`, teal `#38C6B0`, soft cyan `#78DCE8`, text `#F1F5F9` / `#94A3B8`, border `rgba(148,163,184,.12)`.
+The blue→teal gradient is used only for primary buttons, the selected navigation item, the current timeline stage, featured stat cards and progress bars.
+Status colours: active/approved green, pending amber, changes requested orange, under review blue, completed teal, rejected/overdue red, inactive/closed gray — always with a dot and a text label.
+Sidebar is grouped in sections with a role chip; stat cards carry icon, label, value and a one-line description built from real data; tables sort (click or Enter on a header), paginate and turn into cards on phones; row actions sit in a kebab menu;
+forms mark required fields and highlight invalid input; long checklists get a filter box; loading uses skeletons; pressing `/` focuses the search.
+Admin dashboard: welcome header with date, 8 stat cards, pending registrations (approve / reject / details), research analytics donut, recent research, an activity timeline built from registrations and research records, supervisors overview, and quick actions that open the real add-user dialog, course form, ID import, registrations, reports and research list.
+There is no "create announcement" action for the admin, because announcements exist only for supervisors in the API; no trend arrows are shown, because the API keeps no historical counts.
+
+## Earlier light tokens (superseded)
 Navy `#173B57` (primary, sidebar), teal `#2D8C7C` (accents/progress), background `#F3F6FA`, surface `#FFFFFF`, text `#243447` / `#64748B`, success `#16A34A`, warning `#F59E0B`, error `#DC2626`, border `#E2E8F0`.
 Status badges use darker "ink" variants of success/warning/error so text keeps contrast on the tinted backgrounds, and every badge carries a text label (status is never conveyed by color alone).
 Fonts are self-hosted in `public/fonts/` (Inter for English, Tajawal for Arabic; no external requests, works offline and under the CSP).
