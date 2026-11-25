@@ -298,3 +298,7 @@ tr.late td:first-child{box-shadow:inset 3px 0 0 var(--bad)}[dir=rtl] tr.late td:
 .rt td:first-child{min-width:170px}
 @media(max-width:900px){.sb-nav [data-tip]::after{display:none!important}}
 @media(max-width:640px){.todo{flex-wrap:wrap}.todo>.row{width:100%;justify-content:flex-start;padding-inline-start:48px}.todo .t{flex-basis:calc(100% - 56px)}}
+
+.datef{position:relative;display:inline-flex;gap:4px;align-items:center}.datef input[type=text]{width:150px}
+.datef-native{position:absolute;inset-inline-end:0;bottom:0;width:1px;height:1px;opacity:0;pointer-events:none;border:0;padding:0}
+input[type=date]{direction:ltr}

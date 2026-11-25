@@ -1,6 +1,6 @@
 // Supervisor views: dashboard, submissions & reviews queue, stage management, grades overview and reports.
 import { $, esc, t, badge, toast, fmtDate, fmtDay, state, api, downloadPath, act, courseOpts, render, notifText } from '../core.js';
-import { icon, avatar, num, progress, remBadge, pageHeader, empty, setCrumbs, confirmDialog, tabsHtml, paginate, pagerHtml, bindPager, go } from '../ui.js';
+import { icon, avatar, dateField, bindDateFields, num, progress, remBadge, pageHeader, empty, setCrumbs, confirmDialog, tabsHtml, paginate, pagerHtml, bindPager, go } from '../ui.js';
 import { renderResearchStages, stateBadge } from './stages.js';
 import { notifMeta } from './notifications.js';
 
@@ -111,7 +111,7 @@ async function renderStageForm(view) {
     <section class="card"><h3>${t('sf.basics')}</h3><label for="n">${t('stageName')}</label><input id="n" required maxlength="120" value="${esc(s?.name ?? '')}">
       <label for="c">${t('course')}</label><select id="c" ${s ? 'disabled' : ''}>${courseOpts(courses)}</select>
       <label for="d">${t('description')}</label><textarea id="d" maxlength="2000">${esc(s?.description ?? '')}</textarea><label for="i">${t('instructions')}</label><textarea id="i" maxlength="4000">${esc(s?.instructions ?? '')}</textarea>
-      <div class="field-row"><div><label for="sd">${t('startDate')}</label><input type="date" lang="en" dir="ltr" id="sd" value="${s?.start_date ?? ''}"></div><div><label for="dl">${t('deadline')}</label><input type="date" lang="en" dir="ltr" id="dl" value="${s?.deadline ?? ''}"></div>
+      <div class="field-row"><div><label for="sd">${t('startDate')}</label>${dateField('sd', s?.start_date ?? '', t('startDate'))}</div><div><label for="dl">${t('deadline')}</label>${dateField('dl', s?.deadline ?? '', t('deadline'))}</div>
         <div><label for="mg">${rows.length ? t('maxGradeFromRubric') : t('maxGrade')}</label><input type="number" id="mg" min="1" max="1000" step="0.5" value="${s?.max_grade ?? 100}"></div></div></section>
     <section class="card"><h3>${t('rubric')}</h3><p class="hint">${t('rubricHint')}</p><div id="crits"></div><div class="row" style="margin-top:8px"><button type="button" class="ghost sm" id="addc">${icon('plus')} ${t('addCriterion')}</button><button type="button" class="ghost sm" id="defc">${t('defaultRubric')}</button></div></section></div>
     <div class="stack"><section class="card"><h3>${t('sf.rules')}</h3><label>${t('formats')}</label><div class="row">${FORMATS.map(f => `<label class="inl"><input type="checkbox" data-fmt="${f}" ${(s?.formats ?? ['pdf', 'doc', 'docx']).includes(f) ? 'checked' : ''}> .${f}</label>`).join('')}</div>
@@ -131,7 +131,7 @@ async function renderStageForm(view) {
     view.querySelectorAll('[data-cm]').forEach(i => i.oninput = () => { rows[i.dataset.cm].max = i.value; $('#mg').value = rows.reduce((a, c) => a + (Number(c.max) || 0), 0); });
     view.querySelectorAll('[data-cx]').forEach(b => b.onclick = () => { rows.splice(Number(b.dataset.cx), 1); paint(); });
   };
-  paint();
+  paint(); bindDateFields(view);
   $('#addc').onclick = () => { rows.push({ name: '', max: 10 }); paint(); };
   $('#defc').onclick = () => { rows.length = 0; [40, 20, 20, 10, 10].forEach((m, i) => rows.push({ name: t('crit' + i), max: m })); paint(); };
   $('#cancel').onclick = back; $('#cancel2').onclick = back;
@@ -166,14 +166,14 @@ async function renderStageDetail(view, id) {
       ${s.description ? `<p>${esc(s.description)}</p>` : ''}${s.instructions ? `<p class="small"><b>${t('requirements')}:</b> ${esc(s.instructions)}</p>` : ''}
       ${d.criteria.length ? `<p class="small mute">${t('rubric')}: ${d.criteria.map(c => `${esc(c.name)} (${num(c.max_score)})`).join(' · ')}</p>` : ''}${s.started ? `<p class="small mute">${icon('lock')} ${t('editLocked')}</p>` : ''}
       <div class="row"><button class="ghost sm" id="pp">${icon('calendar')} ${t('postpone')}</button><button class="ghost sm" id="pa">${icon('award')} ${t('publishAll')}</button><button class="ghost sm" id="lk">${icon('lock')} ${s.grades_locked ? t('unlockGrades') : t('lockGrades')}</button>${s.started ? '' : `<button class="ghost sm" id="ed">${icon('edit')} ${t('edit')}</button>`}<button class="ghost sm" id="hs">${icon('clock')} ${t('showHistory')}</button></div>
-      <div class="row" id="ppbox" hidden style="margin-top:10px"><label class="inl">${t('startDate')} <input type="date" lang="en" dir="ltr" id="pps" value="${s.start_date ?? ''}"></label><label class="inl">${t('newDeadline')} <input type="date" lang="en" dir="ltr" id="ppd" value="${s.deadline ?? ''}"></label><button class="sm" id="ppgo">${t('postpone')}</button></div></div>
+      <div class="row" id="ppbox" hidden style="margin-top:10px"><label class="inl" for="pps">${t('startDate')}</label>${dateField('pps', s.start_date ?? '', t('startDate'))}<label class="inl" for="ppd">${t('newDeadline')}</label>${dateField('ppd', s.deadline ?? '', t('newDeadline'))}<button class="sm" id="ppgo">${t('postpone')}</button></div></div>
     <div class="stats">${[['users', '', t('assigned2'), C.assigned], ['upload', '', t('submittedC'), C.submitted], ['inbox', C.pending_review ? 'warn' : '', t('awaitingC'), C.pending_review], ['checkc', 'ok', t('approvedC2'), C.approved], ['edit', C.changes_requested ? 'warn' : '', t('changesC'), C.changes_requested],
       ['x', '', t('rejectedC'), C.rejected], ['clock', '', t('missingC'), C.missing], ['alert', C.late ? 'bad' : '', t('lateC'), C.late], ['award', 'teal', t('gradedC'), C.graded]].map(([ic, tone, l, v]) => tile(ic, tone, l, v)).join('')}</div>
     <section class="card"><div class="card-h"><h3>${t('stageTargets')}</h3></div>${d.targets.length ? `<div class="table-wrap"><table class="rt"><thead><tr><th>${t('target')}</th><th>${t('status')}</th><th>${t('attempts')}</th><th>${t('submittedAt')}</th><th>${t('grade')}</th><th>${t('actions')}</th></tr></thead><tbody>${d.targets.map(row).join('')}</tbody></table></div>
       <div class="row" style="margin-top:14px"><input class="grow" id="rm" placeholder="${t('remindPh')}" maxlength="1000" aria-label="${t('remindPh')}"><button class="ghost" id="rmb">${icon('bell')} ${t('remind')}</button></div>` : empty({ ic: 'users', title: t('noStages'), text: t('sf.noTargets') })}</section>
     <section class="card"><h3>${t('assignMore')}</h3>${d.unassigned.length ? `<div class="checks" id="ul">${d.unassigned.map(r => `<label><input type="checkbox" value="${r.id}"> ${esc(r.team || r.student)} <span class="mute small">— ${esc(r.title)}</span></label>`).join('')}</div><p><button id="asg">${t('assign')}</button></p>` : `<p class="mute small">${t('noUnassigned')}</p>`}</section>
     <section class="card" id="histbox" hidden><h3>${t('history')}</h3><div id="hist"></div></section>`;
-  $('#back').onclick = back;
+  $('#back').onclick = back; bindDateFields(view);
   const setState = (st, withDates = false) => act(async () => {
     if (st === 'closed' && !await confirmDialog({ title: t('close'), text: t('sf.confirmClose'), confirm: t('close'), tone: 'warn' })) return;
     const dates = withDates ? { startDate: $('#pps').value || null, deadline: $('#ppd').value || null } : {};

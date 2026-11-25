@@ -186,3 +186,23 @@ export function bindDropzone(root, id, { formats = [], maxMb = 10, onChange = ()
 // run an async action on a button: disables it, shows the error toast
 export const withBusy = (btn, fn) => async (...a) => { btn.disabled = true; try { return await fn(...a); } finally { if (btn.isConnected) btn.disabled = false; } };
 export const go = (tab, extra = {}) => { state.tab = tab; state.openId = null; state.openStageId = null; state.stageForm = null; Object.assign(state, extra); render(); };
+
+// ---------- Date field (locale-proof) ----------
+// The browser's own <input type=date> prints its placeholder in the browser language, which scrambles in an LTR page.
+// This field is a plain ISO text box (YYYY-MM-DD, always LTR) plus a calendar button that opens the native picker.
+export const dateField = (id, value = '', label = '') => `<div class="datef"><input id="${id}" type="text" dir="ltr" inputmode="numeric" placeholder="YYYY-MM-DD" maxlength="10" autocomplete="off" value="${esc(value ?? '')}" ${label ? `aria-label="${esc(label)}"` : ''}>
+  <button type="button" class="ghost icon" data-cal="${id}" aria-label="${t('pickDate')}" data-tip="${t('pickDate')}">${icon('calendar')}</button><input type="date" class="datef-native" tabindex="-1" aria-hidden="true" lang="en" data-for="${id}" value="${esc(value ?? '')}"></div>`;
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
+export function bindDateFields(root) {
+  root.querySelectorAll('[data-cal]').forEach(b => {
+    const txt = root.querySelector('#' + b.dataset.cal), nat = root.querySelector(`[data-for="${b.dataset.cal}"]`);
+    txt.addEventListener('input', () => {
+      const d = txt.value.replace(/\D/g, '').slice(0, 8);
+      const f = d.length > 6 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6)}` : d.length > 4 ? `${d.slice(0, 4)}-${d.slice(4)}` : d;
+      if (f !== txt.value) txt.value = f;
+      if (ISO.test(txt.value)) nat.value = txt.value;
+    });
+    nat.onchange = () => { txt.value = nat.value; };
+    b.onclick = () => { nat.value = ISO.test(txt.value) ? txt.value : ''; try { nat.showPicker(); } catch { nat.focus(); } };
+  });
+}
