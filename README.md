@@ -10,6 +10,8 @@ supervisors (doctors) review, comment on and grade that work, and admins manage 
 نظام لإدارة المشاريع البحثية: يسجّل الطالب موضوع بحثه ويرفع نسخ العمل، ويراجع الدكتور (المشرف) العمل ويعلّق عليه ويقيّمه،
 ويدير المسؤول المستخدمين والمواعيد النهائية والتقارير.
 
+Full description: [docs/PROJECT_DESCRIPTION.md](docs/PROJECT_DESCRIPTION.md) — الوصف الكامل للمشروع.
+
 ## Supervisor (Doctor) permissions / صلاحيات الدكتور
 | Permission / الصلاحية | Details |
 |---|---|
