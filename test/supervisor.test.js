@@ -31,16 +31,16 @@ const day = off => new Date(Date.now() + off * 86400000).toISOString().slice(0, 
 
 const admin = await login('admin@example.com', 'admin123');
 const doc = await login('doctor@example.com', 'doctor123');
-const stu1 = await login('student@example.com', 'student123');
-const stu2 = await login('student2@example.com', 'student123');
+const stu1 = await login('20240001', 'student123');
+const stu2 = await login('20240002', 'student123');
 // a second supervisor + an outsider student
+const course = (await call('GET', '/courses', null, admin)).body[0];
 await call('POST', '/users', { name: 'Dr. Other', email: 'other@example.com', password: 'secret1', role: 'supervisor' }, admin);
-await call('POST', '/users', { name: 'Solo', email: 'solo@example.com', password: 'secret1', role: 'student' }, admin);
+await call('POST', '/users', { name: 'Solo', email: 'solo@example.com', password: 'secret1', role: 'student', courseIds: [course.id] }, admin);
 const doc2 = await login('other@example.com', 'secret1');
 const solo = await login('solo@example.com', 'secret1');
 const sups = (await call('GET', '/supervisors', null, stu1)).body;
 const drSara = sups.find(s => s.name === 'Dr. Sara'), drOther = sups.find(s => s.name === 'Dr. Other');
-const course = (await call('GET', '/courses', null, stu1)).body[0];
 const students = (await call('GET', '/students', null, doc)).body;
 const [s1, s2, sSolo] = ['student@example.com', 'student2@example.com', 'solo@example.com'].map(e => students.find(s => s.email === e));
 
@@ -53,6 +53,7 @@ let teams = (await call('GET', '/teams', null, doc)).body;
 assert.equal(teams.length, 1); assert.equal(teams[0].members.find(m => m.leader).id, s1.id); ok('team listing shows members and leader');
 assert.equal((await call('GET', '/teams', null, doc2)).body.length, 0); ok('other supervisor does not see my team');
 await is(call('PUT', `/teams/${teamId}/leader`, { userId: s2.id }, doc), 200, 'assign team leader');
+await is(call('PUT', `/teams/${teamId}/leader`, { userId: s1.id }, doc), 200, 'reassign team leader');
 await is(call('PUT', `/teams/${teamId}/leader`, { userId: sSolo.id }, doc), 400, 'leader must belong to the team');
 await is(call('PUT', `/teams/${teamId}/leader`, { userId: s1.id }, doc2), 403, 'other supervisor cannot change my team');
 await is(call('PUT', `/teams/${teamId}/members`, { add: [sSolo.id] }, doc), 200, 'add a member');
@@ -64,7 +65,7 @@ assert.ok((await keys(solo)).includes('n.team.removed')); ok('removed member not
 const reg = (tok, title, extra = {}) => call('POST', '/research', { title, description: 'About ' + title, courseId: course.id, supervisorId: drSara.id, filename: 'p.pdf', data: pdf, ...extra }, tok);
 const t1 = (await is(reg(stu1, 'Team project'), 200, 'team registers a topic with description')).body.id;
 const t2 = (await is(reg(solo, 'Solo project'), 200, 'individual registers a topic')).body.id;
-const t3 = (await is(call('POST', '/research', { title: 'Other sup', courseId: course.id, supervisorId: drOther.id, filename: 'p.pdf', data: pdf }, (await (async () => { await call('POST', '/users', { name: 'Zed', email: 'zed@example.com', password: 'secret1', role: 'student' }, admin); return login('zed@example.com', 'secret1'); })())), 200, "student registers with the other supervisor")).body.id;
+const t3 = (await is(call('POST', '/research', { title: 'Other sup', courseId: course.id, supervisorId: drOther.id, filename: 'p.pdf', data: pdf }, (await (async () => { await call('POST', '/users', { name: 'Zed', email: 'zed@example.com', password: 'secret1', role: 'student', courseIds: [course.id] }, admin); return login('zed@example.com', 'secret1'); })())), 200, "student registers with the other supervisor")).body.id;
 let list = (await call('GET', '/research', null, doc)).body;
 assert.equal(list.length, 2); assert.ok(list.every(x => x.description)); assert.ok(!list.some(x => x.id === t3)); ok("supervisor sees only own research with descriptions");
 await is(call('POST', `/research/${t3}/approve`, { decision: 'approve' }, doc), 403, "cannot approve another supervisor's topic");
@@ -128,7 +129,8 @@ await is(sub(stu1, st1, t1, 'a.pdf', Buffer.concat([Buffer.from('%PDF'), Buffer.
 let a1 = (await is(sub(stu1, st1, t1, 'one.pdf', pdf, 'first try'), 200, 'student submits a stage')).body;
 assert.equal(a1.attempt, 1); assert.equal(a1.late, false);
 assert.ok((await keys(doc)).includes('n.stage.submitted')); ok('supervisor notified of the stage submission');
-await is(sub(stu2, st1, t1, 'two.pdf', pdf), 409, 'cannot submit again while awaiting review');
+await is(sub(stu2, st1, t1, 'two.pdf', pdf), 403, 'a team member who is not the leader cannot submit');
+await is(sub(stu1, st1, t1, 'two.pdf', pdf), 409, 'cannot submit again while awaiting review');
 let det = (await call('GET', `/stages/${st1}`, null, doc)).body;
 const row1 = det.targets.find(t => t.research_id === t1), row4 = det.targets.find(t => t.research_id === t4);
 assert.equal(row1.status, 'submitted'); assert.equal(row4.status, 'not_submitted'); assert.equal(row4.missing, true); ok('stage overview shows who submitted and who did not');
@@ -189,10 +191,10 @@ await is(grade(doc, st2, t4, { score: 45, comment: 'ok' }), 200, 'grade a stage 
 await is(call('PUT', `/stages/${st1}/grades-lock`, { locked: true }, doc), 200, 'lock grades');
 await is(grade(doc, st1, t1, { criteria: crit.map(c => ({ id: c.id, score: c.max_score })) }), 409, 'locked grades cannot change');
 await is(call('PUT', `/stages/${st1}/grades-lock`, { locked: false }, doc), 200, 'unlock grades');
-await is(grade(doc, st1, t1, { criteria: crit.map(c => ({ id: c.id, score: c.max_score })) }), 200, 'update a grade when permitted');
+await is(grade(doc, st1, t1, { criteria: crit.map(c => ({ id: c.id, score: c.max_score })), publish: true }), 200, 'update a grade when permitted');
 const tot = (await call('GET', `/research/${t1}/stages`, null, stu1)).body.totals;
 assert.equal(tot.earned, 100); assert.equal(tot.total_max, 150); assert.equal(tot.percent, 66.7); ok('accumulated total across stages');
-await is(call('PUT', `/research/${t1}/grade`, { score: 92, comment: 'Excellent' }, doc), 200, 'final research grade');
+await is(call('PUT', `/research/${t1}/grade`, { score: 92, comment: 'Excellent', publish: true }, doc), 200, 'final research grade');
 await is(call('PUT', `/research/${t1}/grade`, { score: 93 }, doc2), 403, "other supervisor cannot set the final grade");
 assert.equal((await call('GET', `/research/${t1}`, null, stu2)).body.grade, 92); ok('team sees the final grade');
 await is(call('PUT', `/stages/${st1}/targets/${t1}/grade`, { score: 5 }, stu1), 403, 'students cannot change grades');

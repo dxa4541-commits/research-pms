@@ -173,6 +173,108 @@ CREATE INDEX IF NOT EXISTS idx_msg_student ON messages(student_id, supervisor_id
 CREATE INDEX IF NOT EXISTS idx_audit_research ON audit_log(research_id, id);
 `);
 
+// ---------- Student features: identity, registration, enrollment, team life-cycle, grade publishing ----------
+const freshCol = (table, col, def) => { const had = !!db.prepare(`SELECT 1 FROM pragma_table_info('${table}') WHERE name=?`).get(col); if (!had) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`); return !had; };
+freshCol('users', 'university_id', 'TEXT');
+freshCol('users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
+freshCol('users', 'active', 'INTEGER NOT NULL DEFAULT 1');
+freshCol('courses', 'team_mode', "TEXT NOT NULL DEFAULT 'both'");          // team | individual | both
+freshCol('courses', 'min_team_size', 'INTEGER NOT NULL DEFAULT 1');
+freshCol('courses', 'max_team_size', 'INTEGER NOT NULL DEFAULT 4');
+freshCol('courses', 'teams_locked', 'INTEGER NOT NULL DEFAULT 0');
+freshCol('courses', 'show_student_ids', 'INTEGER NOT NULL DEFAULT 1');
+freshCol('teams', 'idea', 'TEXT');
+freshCol('teams', 'description', 'TEXT');
+freshCol('teams', 'accepting', 'INTEGER NOT NULL DEFAULT 1');
+freshCol('teams', 'locked', 'INTEGER NOT NULL DEFAULT 0');
+freshCol('teams', 'invite_code', 'TEXT');
+freshCol('teams', 'members_can_submit', 'INTEGER NOT NULL DEFAULT 0');
+freshCol('research', 'problem', 'TEXT');
+freshCol('research', 'objectives', 'TEXT');
+freshCol('stages', 'allow_late', 'INTEGER NOT NULL DEFAULT 1');
+// Grades are visible to students only once published. Grades that existed before this feature stay visible.
+if (freshCol('stage_grades', 'published', 'INTEGER NOT NULL DEFAULT 0')) db.exec('UPDATE stage_grades SET published=1');
+if (freshCol('research_grades', 'published', 'INTEGER NOT NULL DEFAULT 0')) db.exec('UPDATE research_grades SET published=1');
+db.exec(`
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_university_id ON users(university_id) WHERE university_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS enrollments (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  PRIMARY KEY (user_id, course_id)
+);
+CREATE TABLE IF NOT EXISTS approved_ids (
+  id INTEGER PRIMARY KEY, university_id TEXT NOT NULL UNIQUE, name TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS approved_id_courses (
+  approved_id INTEGER NOT NULL REFERENCES approved_ids(id) ON DELETE CASCADE,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  PRIMARY KEY (approved_id, course_id)
+);
+CREATE TABLE IF NOT EXISTS registration_requests (
+  id INTEGER PRIMARY KEY, university_id TEXT NOT NULL, name TEXT NOT NULL, email TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  decided_by INTEGER REFERENCES users(id), decided_at TEXT, decision_note TEXT, user_id INTEGER REFERENCES users(id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reg_pending ON registration_requests(university_id) WHERE status IN ('pending','approved');
+CREATE TABLE IF NOT EXISTS team_members (
+  id INTEGER PRIMARY KEY,
+  team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  course_id INTEGER NOT NULL REFERENCES courses(id),
+  role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('leader','member')),
+  joined_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, left_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tm_active_user_course ON team_members(user_id, course_id) WHERE left_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tm_active_team_user ON team_members(team_id, user_id) WHERE left_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_tm_team ON team_members(team_id);
+CREATE TABLE IF NOT EXISTS team_history (
+  id INTEGER PRIMARY KEY, team_id INTEGER NOT NULL, user_id INTEGER, actor_id INTEGER,
+  action TEXT NOT NULL, detail TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_th_team ON team_history(team_id, id);
+CREATE TABLE IF NOT EXISTS team_invitations (
+  id INTEGER PRIMARY KEY, team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  invitee_id INTEGER NOT NULL REFERENCES users(id), invited_by INTEGER NOT NULL REFERENCES users(id),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','accepted','rejected','cancelled')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, decided_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_inv_pending ON team_invitations(team_id, invitee_id) WHERE status='pending';
+CREATE TABLE IF NOT EXISTS join_requests (
+  id INTEGER PRIMARY KEY, team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id), message TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','accepted','rejected','cancelled')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, decided_at TEXT, decided_by INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_join_pending ON join_requests(team_id, user_id) WHERE status='pending';
+CREATE TABLE IF NOT EXISTS membership_requests (
+  id INTEGER PRIMARY KEY, team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('add','remove','leave','leader')), user_id INTEGER NOT NULL REFERENCES users(id),
+  requested_by INTEGER NOT NULL REFERENCES users(id), note TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, decided_by INTEGER, decided_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mreq_pending ON membership_requests(team_id, kind, user_id) WHERE status='pending';
+CREATE TABLE IF NOT EXISTS topic_reviews (
+  id INTEGER PRIMARY KEY, research_id INTEGER NOT NULL REFERENCES research(id),
+  reviewer_id INTEGER NOT NULL REFERENCES users(id), decision TEXT NOT NULL, comment TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_topic_reviews ON topic_reviews(research_id, id);
+`);
+// One-time migration of the old single `users.team_id` into team_members (+ enroll those students in the team's course).
+if (db.prepare("SELECT 1 FROM team_members LIMIT 1").get() == null) {
+  for (const u of db.prepare('SELECT u.id,u.team_id,t.course_id,t.leader_id FROM users u JOIN teams t ON t.id=u.team_id').all()) {
+    db.prepare('INSERT OR IGNORE INTO team_members (team_id,user_id,course_id,role) VALUES (?,?,?,?)').run(u.team_id, u.id, u.course_id, u.leader_id === u.id ? 'leader' : 'member');
+    db.prepare('INSERT OR IGNORE INTO enrollments (user_id,course_id) VALUES (?,?)').run(u.id, u.course_id);
+  }
+}
+// Students that existed before enrollment was introduced are enrolled in every existing course (admin can change this).
+if (freshCol('users', 'enrolled_migrated', 'INTEGER NOT NULL DEFAULT 0')) {
+  db.exec("INSERT OR IGNORE INTO enrollments (user_id,course_id) SELECT u.id,c.id FROM users u CROSS JOIN courses c WHERE u.role='student'");
+}
+
 // Migration: deadline column (added after v1) + indexes for scale.
 if (!db.prepare("SELECT 1 FROM pragma_table_info('research') WHERE name='deadline'").get())
   db.exec('ALTER TABLE research ADD COLUMN deadline TEXT');
@@ -210,8 +312,20 @@ if (db.prepare('SELECT COUNT(*) AS n FROM users').get().n === 0) {
   } else {
     addUser.run('System Admin', 'admin@example.com', hashPassword('admin123'), 'admin');
     addUser.run('Dr. Sara', 'doctor@example.com', hashPassword('doctor123'), 'supervisor');
-    addUser.run('Ahmed', 'student@example.com', hashPassword('student123'), 'student');
-    addUser.run('Lina', 'student2@example.com', hashPassword('student123'), 'student');
-    db.prepare('INSERT INTO courses (name) VALUES (?)').run('Software Engineering');
+    const cid = Number(db.prepare('INSERT INTO courses (name) VALUES (?)').run('Software Engineering').lastInsertRowid);
+    const addStudent = (name, email, uid) => {
+      const id = Number(db.prepare('INSERT INTO users (name,email,password_hash,role,university_id) VALUES (?,?,?,?,?)').run(name, email, hashPassword('student123'), 'student', uid).lastInsertRowid);
+      db.prepare('INSERT INTO enrollments (user_id,course_id) VALUES (?,?)').run(id, cid);
+    };
+    addStudent('Ahmed', 'student@example.com', '20240001');
+    addStudent('Lina', 'student2@example.com', '20240002');
+  }
+  // Approved university IDs (students may register with these; demo: 20240003-20240008).
+  if (process.env.NODE_ENV !== 'production') {
+    const cid = db.prepare('SELECT id FROM courses LIMIT 1').get().id;
+    for (const [uid, name] of [['20240003', 'Omar'], ['20240004', 'Mona'], ['20240005', 'Khaled'], ['20240006', 'Huda'], ['20240007', 'Yousef'], ['20240008', 'Reem']]) {
+      const a = Number(db.prepare('INSERT INTO approved_ids (university_id,name) VALUES (?,?)').run(uid, name).lastInsertRowid);
+      db.prepare('INSERT INTO approved_id_courses (approved_id,course_id) VALUES (?,?)').run(a, cid);
+    }
   }
 }

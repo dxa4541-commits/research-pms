@@ -14,6 +14,7 @@ const S = 'student', V = 'supervisor', A = 'admin';
 // [method, path, handler, allowed roles (null = public, [] = any logged-in user)]
 const routes = [
   ['POST', '/api/login', 'login', null],
+  ['POST', '/api/register', 'register', null],
   ['POST', '/api/logout', 'logout', []],
   ['GET', '/api/me', 'me', []],
   ['POST', '/api/me/password', 'changePassword', []],
@@ -39,7 +40,48 @@ const routes = [
   ['GET', '/api/teams', 'listTeams', [V, A]],
   ['POST', '/api/teams', 'formTeams', [V, A]],
   ['PUT', '/api/teams/:id/members', 'updateTeamMembers', [V, A]],
-  ['PUT', '/api/teams/:id/leader', 'setTeamLeader', [V, A]],
+  ['PUT', '/api/teams/:id/leader', 'setTeamLeader', [S, V, A]],
+  ['PUT', '/api/teams/:id/lock', 'setTeamLock', [V, A]],
+  ['GET', '/api/teams/:id/history', 'teamHistory', [V, A]],
+  ['GET', '/api/membership-requests', 'listChangeRequests', [V, A]],
+  ['POST', '/api/membership-requests/:id/decide', 'decideChangeRequest', [V, A]],
+  ['PUT', '/api/courses/:id/settings', 'updateCourseSettings', [V, A]],
+  // Registration (admin)
+  ['GET', '/api/registrations', 'listRegistrations', [A]],
+  ['POST', '/api/registrations/:id/approve', 'approveRegistration', [A]],
+  ['POST', '/api/registrations/:id/reject', 'rejectRegistration', [A]],
+  ['GET', '/api/approved-ids', 'listApprovedIds', [A]],
+  ['POST', '/api/approved-ids', 'addApprovedIds', [A]],
+  ['PUT', '/api/approved-ids/:id', 'updateApprovedId', [A]],
+  ['DELETE', '/api/approved-ids/:id', 'deleteApprovedId', [A]],
+  ['PUT', '/api/users/:id/enrollments', 'setEnrollments', [A]],
+  // Student: teams, invitations, join requests, dashboard
+  ['GET', '/api/student/dashboard', 'studentDashboard', [S]],
+  ['GET', '/api/available-students', 'availableStudents', [S]],
+  ['GET', '/api/discover-teams', 'discoverTeams', [S]],
+  ['GET', '/api/my/teams', 'listMyTeams', [S]],
+  ['POST', '/api/my/teams', 'createMyTeam', [S]],
+  ['PUT', '/api/my/teams/:id', 'updateMyTeam', [S]],
+  ['DELETE', '/api/my/teams/:id', 'deleteMyTeam', [S]],
+  ['GET', '/api/my/teams/:id/history', 'myTeamHistory', [S]],
+  ['POST', '/api/teams/join-by-code', 'joinByCode', [S]],
+  ['POST', '/api/teams/:id/invitations', 'inviteStudent', [S]],
+  ['POST', '/api/teams/:id/invite-code', 'manageInviteCode', [S]],
+  ['POST', '/api/teams/:id/join-requests', 'requestToJoin', [S]],
+  ['GET', '/api/teams/:id/join-requests', 'listJoinRequests', [S]],
+  ['DELETE', '/api/teams/:id/members/:uid', 'removeMyMember', [S]],
+  ['POST', '/api/teams/:id/leave', 'leaveTeam', [S]],
+  ['POST', '/api/teams/:id/change-requests', 'requestChange', [S]],
+  ['GET', '/api/invitations', 'listInvitations', [S]],
+  ['POST', '/api/invitations/:id/respond', 'respondInvitation', [S]],
+  ['POST', '/api/invitations/:id/cancel', 'cancelInvitation', [S]],
+  ['GET', '/api/join-requests/mine', 'myJoinRequests', [S]],
+  ['POST', '/api/join-requests/:id/respond', 'respondJoinRequest', [S]],
+  ['POST', '/api/join-requests/:id/cancel', 'cancelJoinRequest', [S]],
+  ['PUT', '/api/research/:id/topic', 'editTopic', [S]],
+  ['PUT', '/api/research/:id/grade/publish', 'publishFinalGrade', [V]],
+  ['PUT', '/api/stages/:id/publish', 'publishStageGrades', [V]],
+  ['PUT', '/api/stages/:id/targets/:rid/publish', 'publishStageGrade', [V]],
   // Stages (supervisor), stage submissions (student), per-research stage view (all roles, access-checked)
   ['GET', '/api/stages', 'listStages', [V, A]],
   ['POST', '/api/stages', 'createStage', [V]],
@@ -123,6 +165,7 @@ async function api(req, res, url) {
     const user = route.roles === null ? null : authenticate(token);
     if (route.roles !== null) {
       if (!user) throw new HttpError(401, 'Please log in');
+      if (user.must_change_password && !['changePassword', 'me', 'logout'].includes(route.handler)) throw new HttpError(403, 'You must change your initial password first');
       if (route.roles.length && !route.roles.includes(user.role)) throw new HttpError(403, 'Not allowed for your role');
     }
     const params = url.pathname.match(route.re).groups ?? {};

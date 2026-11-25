@@ -14,7 +14,7 @@ export function notifySupervisor(research, key, params) { notify(research.superv
 // Everyone who works on a research: the registering student plus all members of its team.
 export function parties(research) {
   const ids = new Set([research.student_id]);
-  if (research.team_id) for (const m of db.prepare('SELECT id FROM users WHERE team_id=?').all(research.team_id)) ids.add(m.id);
+  if (research.team_id) for (const m of db.prepare('SELECT user_id FROM team_members WHERE team_id=? AND left_at IS NULL').all(research.team_id)) ids.add(m.user_id);
   return [...ids];
 }
 export function notifyParties(research, key, params = {}) { for (const id of parties(research)) notify(id, key, params, research.id); }

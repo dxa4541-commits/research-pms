@@ -12,7 +12,7 @@ export function addMessage({ supervisorId, target, senderId, kind = 'message', b
   return Number(r.lastInsertRowid);
 }
 export function targetMembers(target) {
-  return target.team_id ? db.prepare('SELECT id FROM users WHERE team_id=?').all(target.team_id).map(x => x.id) : [target.student_id];
+  return target.team_id ? db.prepare('SELECT user_id FROM team_members WHERE team_id=? AND left_at IS NULL').all(target.team_id).map(x => x.user_id) : [target.student_id];
 }
 export function targetName(target) {
   return target.team_id ? db.prepare('SELECT name FROM teams WHERE id=?').get(target.team_id)?.name

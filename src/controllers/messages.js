@@ -5,6 +5,7 @@ import { db } from '../db.js';
 import { fail, need } from '../errors.js';
 import { UPLOAD_DIR, checkFile, storeFile, removeFile } from '../files.js';
 import { audit } from '../audit.js';
+import { isMember, memberIds } from '../teams.js';
 import { addMessage, targetOf, targetMembers, targetName, notifyMessage, preview } from '../messages.js';
 
 const MSG_SQL = `SELECT m.id,m.kind,m.body,m.created_at,m.sender_id,u.name AS sender,m.stage_id,st.name AS stage,m.submission_id,
@@ -14,7 +15,7 @@ const MSG_SQL = `SELECT m.id,m.kind,m.body,m.created_at,m.sender_id,u.name AS se
 // Which (team|student) threads may this user see? Supervisor: only their own; student: their team and themselves.
 function mayAccess(user, m) {
   if (user.role === 'supervisor') return m.supervisor_id === user.id;
-  if (user.role === 'student') return (m.team_id && m.team_id === user.team_id) || m.student_id === user.id;
+  if (user.role === 'student') return (!!m.team_id && isMember(user.id, m.team_id)) || m.student_id === user.id;
   return false; // admin has no access to private team messages
 }
 // Teams/students this supervisor works with: those with assigned research, plus teams they created.
@@ -32,9 +33,16 @@ function parseTarget(q) {
   if (q.get('student')) return { team_id: null, student_id: Number(q.get('student')) };
   return fail(400, 'team or student is required');
 }
-// A student's supervisors are those of their own/team research.
-function studentSupervisors(user) {
-  return db.prepare('SELECT DISTINCT supervisor_id AS id FROM research WHERE student_id=? OR (? IS NOT NULL AND team_id=?)').all(user.id, user.team_id, user.team_id).map(x => x.id);
+// A student's conversations: one per (supervisor, team|self) pair found in the research they may access.
+function studentTargets(user) {
+  const out = new Map();
+  const rows = db.prepare(`SELECT supervisor_id,team_id,student_id FROM research WHERE student_id=?
+    OR team_id IN (SELECT team_id FROM team_members WHERE user_id=? AND left_at IS NULL)`).all(user.id, user.id);
+  for (const r of rows) {
+    const t = r.team_id ? { team_id: r.team_id, student_id: null } : { team_id: null, student_id: user.id };
+    out.set(`${r.supervisor_id}:${keyOf(t)}`, { supervisor_id: r.supervisor_id, ...t });
+  }
+  return out;
 }
 function attachment(body) {
   if (!body.filename && !body.data) return null;
@@ -59,34 +67,34 @@ function linkChecks(supId, target, body) {
 export const messageHandlers = {
   // Conversations list. Supervisor: one per team/student they work with. Student: one per supervisor.
   listThreads({ user }) {
+    const lastOf = (sup, target) => db.prepare(`${MSG_SQL} WHERE m.supervisor_id=? AND (${target.team_id ? 'm.team_id=?' : 'm.student_id=?'}) ORDER BY m.id DESC LIMIT 1`).get(sup, target.team_id ?? target.student_id) ?? null;
+    const membersOf = target => target.team_id ? memberIds(target.team_id).map(id => db.prepare('SELECT name FROM users WHERE id=?').get(id).name)
+      : [db.prepare('SELECT name FROM users WHERE id=?').get(target.student_id).name];
     if (user.role === 'student') {
-      return studentSupervisors(user).map(sid => {
-        const target = user.team_id ? { team_id: user.team_id, student_id: null } : { team_id: null, student_id: user.id };
-        const last = db.prepare(`${MSG_SQL} WHERE m.supervisor_id=? AND (${target.team_id ? 'm.team_id=?' : 'm.student_id=?'}) ORDER BY m.id DESC LIMIT 1`).get(sid, target.team_id ?? target.student_id);
-        return { supervisor_id: sid, name: db.prepare('SELECT name FROM users WHERE id=?').get(sid).name, team_id: target.team_id, student_id: target.student_id, last: last ?? null };
-      });
+      return [...studentTargets(user).values()].map(t => ({
+        key: `${t.supervisor_id}:${keyOf(t)}`, supervisor_id: t.supervisor_id, team_id: t.team_id, student_id: t.student_id,
+        name: db.prepare('SELECT name FROM users WHERE id=?').get(t.supervisor_id).name, team: targetName(t), members: membersOf(t), last: lastOf(t.supervisor_id, t),
+      })).sort((a, b) => (b.last?.id ?? 0) - (a.last?.id ?? 0));
     }
     const out = [];
-    for (const [key, target] of supervisorTargets(user.id)) {
-      const last = db.prepare(`${MSG_SQL} WHERE m.supervisor_id=? AND (${target.team_id ? 'm.team_id=?' : 'm.student_id=?'}) ORDER BY m.id DESC LIMIT 1`).get(user.id, target.team_id ?? target.student_id);
-      const members = db.prepare(target.team_id ? 'SELECT name FROM users WHERE team_id=?' : 'SELECT name FROM users WHERE id=?').all(target.team_id ?? target.student_id).map(x => x.name);
-      out.push({ key, research_id: target.research_id ?? null, team_id: target.team_id, student_id: target.student_id, name: targetName(target), members, last: last ?? null });
-    }
+    for (const [key, target] of supervisorTargets(user.id))
+      out.push({ key, research_id: target.research_id ?? null, team_id: target.team_id, student_id: target.student_id, name: targetName(target), members: membersOf(target), last: lastOf(user.id, target) });
     return out.sort((a, b) => (b.last?.id ?? 0) - (a.last?.id ?? 0));
   },
-  // Messages of one conversation. Supervisor passes ?team=ID or ?student=ID; a student passes ?supervisor=ID.
+  // Messages of one conversation. Supervisor passes ?team=ID or ?student=ID; a student also passes ?supervisor=ID.
   listMessages({ user, query }) {
     let sup, target;
     if (user.role === 'supervisor') { sup = user.id; target = parseTarget(query); if (!supervisorTargets(user.id).has(keyOf(target))) fail(403, 'Not your conversation'); }
     else {
-      sup = Number(query.get('supervisor'));
-      if (!studentSupervisors(user).includes(sup)) fail(403, 'Not your conversation');
-      target = user.team_id ? { team_id: user.team_id, student_id: null } : { team_id: null, student_id: user.id };
+      sup = Number(query.get('supervisor')); target = query.get('team') || query.get('student') ? parseTarget(query) : null;
+      const mine = studentTargets(user);
+      if (!target) { const only = [...mine.values()].filter(t => t.supervisor_id === sup); if (only.length !== 1) fail(403, 'Not your conversation'); target = only[0]; }
+      if (!mine.has(`${sup}:${keyOf(target)}`)) fail(403, 'Not your conversation');
     }
     const rows = db.prepare(`${MSG_SQL} WHERE m.supervisor_id=? AND ${target.team_id ? 'm.team_id=?' : 'm.student_id=?'} ORDER BY m.id`).all(sup, target.team_id ?? target.student_id);
     return rows.filter(m => mayAccess(user, m));
   },
-  // Send a message. Supervisor: {teamId|studentId, ...}. Student: {supervisorId, ...} (goes to their own team/self).
+  // Send a message. Supervisor: {teamId|studentId, ...}. Student: {supervisorId, teamId|studentId?, ...} (only to their own teams/self).
   sendMessage({ user, body }) {
     const text = need(body.body, 'Message', 4000);
     let sup, target;
@@ -95,10 +103,12 @@ export const messageHandlers = {
       target = body.teamId ? { team_id: Number(body.teamId), student_id: null } : body.studentId ? { team_id: null, student_id: Number(body.studentId) } : fail(400, 'Choose a team or student');
       if (!supervisorTargets(user.id).has(keyOf(target))) fail(403, 'Not your conversation');
     } else {
-      const sups = studentSupervisors(user);
-      sup = body.supervisorId ? Number(body.supervisorId) : sups.length === 1 ? sups[0] : fail(400, 'Choose a supervisor');
-      if (!sups.includes(sup)) fail(403, 'Not your supervisor');
-      target = user.team_id ? { team_id: user.team_id, student_id: null } : { team_id: null, student_id: user.id };
+      const mine = [...studentTargets(user).values()];
+      if (!mine.length) fail(403, 'Not your supervisor');
+      const pick = mine.filter(t => (!body.supervisorId || t.supervisor_id === Number(body.supervisorId)) && (!body.teamId || t.team_id === Number(body.teamId)) && (!body.studentId || t.student_id === Number(body.studentId)));
+      if (pick.length > 1) fail(400, 'Choose a supervisor');
+      if (!pick.length) fail(403, 'Not your supervisor');
+      sup = pick[0].supervisor_id; target = { team_id: pick[0].team_id, student_id: pick[0].student_id };
     }
     const links = user.role === 'supervisor' ? linkChecks(sup, target, body) : { stageId: null, submissionId: null };
     const file = attachment(body);

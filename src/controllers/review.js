@@ -16,6 +16,7 @@ export const reviewHandlers = {
     updateStatus(r, status);
     db.prepare('UPDATE research SET rejection_reason=? WHERE id=?').run(status === 'rejected' ? comment : null, r.id);
     if (comment) addNoteToLatest(r, user, comment);
+    db.prepare('INSERT INTO topic_reviews (research_id,reviewer_id,decision,comment) VALUES (?,?,?,?)').run(r.id, user.id, status, comment);
     if (status === 'approved') autoAssign(r);
     notifyParties(r, 'n.' + status, { title: r.title, comment: comment ?? '' });
     audit(user, `topic.${status}`, { researchId: r.id, detail: { comment } });
@@ -27,6 +28,7 @@ export const reviewHandlers = {
     const comment = str(body.comment, 1000) ?? fail(400, 'Please describe the requested changes');
     updateStatus(r, 'changes_requested');
     addNoteToLatest(r, user, comment);
+    db.prepare('INSERT INTO topic_reviews (research_id,reviewer_id,decision,comment) VALUES (?,?,?,?)').run(r.id, user.id, 'changes_requested', comment);
     notifyParties(r, 'n.changes_requested', { title: r.title, comment });
     audit(user, 'topic.changes_requested', { researchId: r.id, detail: { comment } });
     return { status: 'changes_requested' };
@@ -51,10 +53,23 @@ export const reviewHandlers = {
       fail(400, 'Score must be a number between 0 and 100');
     const before = db.prepare('SELECT score FROM research_grades WHERE research_id=?').get(r.id)?.score ?? null;
     const comment = str(body.comment, 2000);
-    db.prepare(`INSERT INTO research_grades (research_id,score,comment,updated_at) VALUES (?,?,?,CURRENT_TIMESTAMP)
-      ON CONFLICT(research_id) DO UPDATE SET score=excluded.score, comment=excluded.comment, updated_at=CURRENT_TIMESTAMP`).run(r.id, score, comment);
-    notifyParties(r, 'n.graded', { title: r.title, score });
-    audit(user, before == null ? 'final.graded' : 'final.grade_updated', { researchId: r.id, detail: { from: before, to: score, comment } });
-    return { score };
+    const publish = body.publish === undefined ? null : (body.publish ? 1 : 0);
+    db.prepare(`INSERT INTO research_grades (research_id,score,comment,updated_at,published) VALUES (?,?,?,CURRENT_TIMESTAMP,?)
+      ON CONFLICT(research_id) DO UPDATE SET score=excluded.score, comment=excluded.comment, updated_at=CURRENT_TIMESTAMP,
+        published=CASE WHEN ? IS NULL THEN research_grades.published ELSE ? END`).run(r.id, score, comment, publish ?? 0, publish, publish);
+    const published = !!db.prepare('SELECT published FROM research_grades WHERE research_id=?').get(r.id).published;
+    if (published) notifyParties(r, 'n.graded', { title: r.title, score });
+    audit(user, before == null ? 'final.graded' : 'final.grade_updated', { researchId: r.id, detail: { from: before, to: score, comment, published } });
+    return { score, published };
+  },
+  // Publish (or hide) the final research grade: students only see it once published.
+  publishFinalGrade({ user, params, body }) {
+    const r = own(accessible(user, Number(params.id)), user);
+    const g = db.prepare('SELECT * FROM research_grades WHERE research_id=?').get(r.id) ?? fail(404, 'There is no grade to publish yet');
+    const published = body.published === undefined ? true : !!body.published;
+    db.prepare('UPDATE research_grades SET published=? WHERE research_id=?').run(published ? 1 : 0, r.id);
+    if (published && !g.published) notifyParties(r, 'n.graded', { title: r.title, score: g.score });
+    audit(user, published ? 'final.published' : 'final.hidden', { researchId: r.id, detail: { score: g.score } });
+    return { published };
   },
 };

@@ -8,6 +8,7 @@ import { notify, notifyParties } from '../notifications.js';
 import { accessible, getResearch } from '../research.js';
 import { audit } from '../audit.js';
 import { addMessage, targetOf, notifyMessage, preview } from '../messages.js';
+import { isLeader, getTeam } from '../teams.js';
 import {
   today, STATE_LIST, getStage, ownStage, criteriaOf, stageStarted, publicStage, targets, decorate, submitProblem, attemptsLeft,
   assign, stageTotals, formatsOf,
@@ -33,6 +34,7 @@ function parseStage(body) {
   if (!formats.length || formats.some(f => !ALL_FORMATS.includes(f))) fail(400, `Allowed formats must be chosen from: ${ALL_FORMATS.join(', ')}`);
   const maxMb = body.maxFileMb == null || body.maxFileMb === '' ? 10 : num(body.maxFileMb, 'File size limit', 0.1, 10);
   const allowResubmit = body.allowResubmit == null ? true : !!body.allowResubmit;
+  const allowLate = body.allowLate == null ? true : !!body.allowLate;
   let maxAttempts = null;
   if (body.maxAttempts != null && body.maxAttempts !== '') {
     maxAttempts = Number(body.maxAttempts);
@@ -48,7 +50,7 @@ function parseStage(body) {
   if (maxGrade > 1000) fail(400, 'Maximum grade must be between 0.1 and 1000');
   return {
     name, description: optText(body.description, 2000, 'Description'), instructions: optText(body.instructions, 4000, 'Instructions'),
-    start, deadline, formats, maxMb, allowResubmit, maxAttempts, criteria, maxGrade,
+    start, deadline, formats, maxMb, allowResubmit, allowLate, maxAttempts, criteria, maxGrade,
   };
 }
 const saveCriteria = (stageId, criteria) => {
@@ -83,9 +85,9 @@ export const stageHandlers = {
     const id = inTx(() => {
       const pos = db.prepare('SELECT COALESCE(MAX(position),0)+1 AS n FROM stages WHERE supervisor_id=?').get(user.id).n;
       const r = db.prepare(`INSERT INTO stages (supervisor_id,course_id,position,name,description,instructions,start_date,deadline,max_grade,
-        allowed_formats,max_file_mb,allow_resubmit,max_attempts,state,assign_all) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        allowed_formats,max_file_mb,allow_resubmit,max_attempts,state,assign_all,allow_late) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
         .run(user.id, course.id, pos, p.name, p.description, p.instructions, p.start, p.deadline, p.maxGrade, p.formats.join(','), p.maxMb,
-          p.allowResubmit ? 1 : 0, p.maxAttempts, state, body.assignAll ? 1 : 0);
+          p.allowResubmit ? 1 : 0, p.maxAttempts, state, body.assignAll ? 1 : 0, p.allowLate ? 1 : 0);
       const sid = Number(r.lastInsertRowid);
       saveCriteria(sid, p.criteria);
       return sid;
@@ -101,8 +103,8 @@ export const stageHandlers = {
     const p = parseStage(body);
     inTx(() => {
       db.prepare(`UPDATE stages SET name=?,description=?,instructions=?,start_date=?,deadline=?,max_grade=?,allowed_formats=?,max_file_mb=?,
-        allow_resubmit=?,max_attempts=?,assign_all=? WHERE id=?`).run(p.name, p.description, p.instructions, p.start, p.deadline, p.maxGrade,
-        p.formats.join(','), p.maxMb, p.allowResubmit ? 1 : 0, p.maxAttempts, body.assignAll ? 1 : 0, s.id);
+        allow_resubmit=?,max_attempts=?,assign_all=?,allow_late=? WHERE id=?`).run(p.name, p.description, p.instructions, p.start, p.deadline, p.maxGrade,
+        p.formats.join(','), p.maxMb, p.allowResubmit ? 1 : 0, p.maxAttempts, body.assignAll ? 1 : 0, p.allowLate ? 1 : 0, s.id);
       saveCriteria(s.id, p.criteria);
     });
     const stage = getStage(s.id);
@@ -214,29 +216,35 @@ export const stageHandlers = {
   // ---------- Stages of one research (student, supervisor, admin) ----------
   researchStages({ user, params }) {
     const r = accessible(user, Number(params.id));
+    const student = user.role === 'student';
     const rows = targets('t.research_id=?', r.id);
     const subs = db.prepare('SELECT id,attempt_no,filename,size,student_note,late,status,created_at,submitted_by FROM stage_submissions WHERE stage_id=? AND research_id=? ORDER BY attempt_no DESC');
     const revs = db.prepare(`SELECT v.id,v.decision,v.comment,v.created_at,u.name AS reviewer FROM stage_reviews v JOIN users u ON u.id=v.reviewer_id
       WHERE v.submission_id=? ORDER BY v.id`);
     const scores = db.prepare('SELECT criterion_id,score FROM stage_grade_scores WHERE stage_id=? AND research_id=?');
     const who = db.prepare('SELECT name FROM users WHERE id=?');
-    const list = rows.filter(t => user.role !== 'student' || true).map(t => {
+    const list = rows.map(t => {
       const stage = getStage(t.stage_id);
-      const problem = user.role === 'student' ? submitProblem(stage, t) : null;
+      const may = student ? mayStudentSubmit(user, r) : null;
+      const problem = student ? (may ?? submitProblem(stage, t)) : null;
+      const showGrade = t.score != null && (!student || t.grade_published);
       return {
-        stage: publicStage(stage), criteria: criteriaOf(stage.id), status: t.status, late: t.late, missing: t.missing, attempts: t.attempts, attempts_left: attemptsLeft(stage, t),
-        extra_attempts: t.extra_attempts, can_submit: user.role === 'student' && !problem, problem,
-        grade: t.score == null ? null : { score: t.score, comment: t.grade_comment, scores: scores.all(stage.id, r.id) },
+        stage: publicStage(stage), criteria: criteriaOf(stage.id), status: t.status, display_status: t.display_status, late: t.late, missing: t.missing, attempts: t.attempts, attempts_left: attemptsLeft(stage, t),
+        extra_attempts: t.extra_attempts, can_submit: student && !problem, problem,
+        grade: showGrade ? { score: t.score, comment: t.grade_comment, published: !!t.grade_published, scores: scores.all(stage.id, r.id) } : null,
+        grade_pending: student && t.score != null && !t.grade_published,
         submissions: subs.all(stage.id, r.id).map(x => ({ ...x, late: !!x.late, by: who.get(x.submitted_by)?.name, reviews: revs.all(x.id) })),
       };
     });
-    return { research_id: r.id, totals: stageTotals(r.id), stages: list };
+    return { research_id: r.id, totals: stageTotals(r.id, student), stages: list };
   },
   // Student: submit (or resubmit) a stage. Every attempt is stored as its own row/file; nothing is overwritten.
   submitStage({ user, params, body }) {
     const stage = getStage(Number(params.id));
     const r = accessible(user, Number(body.researchId));
     const row = targets('t.stage_id=? AND t.research_id=?', stage.id, r.id)[0] ?? fail(404, 'This stage is not assigned to your research');
+    const denied = mayStudentSubmit(user, r);
+    if (denied) fail(403, denied);
     const problem = submitProblem(stage, row);
     if (problem) fail(409, problem);
     const { buf } = checkFile(body.filename, body.data, { formats: formatsOf(stage), maxBytes: Math.floor(stage.max_file_mb * 1048576) });
@@ -318,16 +326,28 @@ export const stageHandlers = {
     }
     const comment = optText(body.comment, 2000, 'Comment');
     const before = row.score;
+    const publish = body.publish === undefined ? null : (body.publish ? 1 : 0);
     inTx(() => {
-      db.prepare(`INSERT INTO stage_grades (stage_id,research_id,score,comment,graded_by,updated_at) VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)
-        ON CONFLICT(stage_id,research_id) DO UPDATE SET score=excluded.score,comment=excluded.comment,graded_by=excluded.graded_by,updated_at=CURRENT_TIMESTAMP`)
-        .run(s.id, rid, score, comment, user.id);
+      db.prepare(`INSERT INTO stage_grades (stage_id,research_id,score,comment,graded_by,updated_at,published) VALUES (?,?,?,?,?,CURRENT_TIMESTAMP,?)
+        ON CONFLICT(stage_id,research_id) DO UPDATE SET score=excluded.score,comment=excluded.comment,graded_by=excluded.graded_by,updated_at=CURRENT_TIMESTAMP,
+          published=CASE WHEN ? IS NULL THEN stage_grades.published ELSE ? END`)
+        .run(s.id, rid, score, comment, user.id, publish ?? 0, publish, publish);
       db.prepare('DELETE FROM stage_grade_scores WHERE stage_id=? AND research_id=?').run(s.id, rid);
       for (const p of parts) db.prepare('INSERT INTO stage_grade_scores (stage_id,research_id,criterion_id,score) VALUES (?,?,?,?)').run(s.id, rid, p.id, p.score);
     });
-    notifyParties(getResearch(rid), 'n.stage.graded', { stage: s.name, score, max: s.max_grade });
-    audit(user, before == null ? 'stage.graded' : 'stage.grade_updated', { stageId: s.id, researchId: rid, detail: { from: before, to: score, criteria: parts, comment } });
-    return { score, total: stageTotals(rid) };
+    const published = !!db.prepare('SELECT published FROM stage_grades WHERE stage_id=? AND research_id=?').get(s.id, rid).published;
+    if (published) notifyParties(getResearch(rid), 'n.stage.graded', { stage: s.name, score, max: s.max_grade });
+    audit(user, before == null ? 'stage.graded' : 'stage.grade_updated', { stageId: s.id, researchId: rid, detail: { from: before, to: score, criteria: parts, comment, published } });
+    return { score, published, total: stageTotals(rid) };
+  },
+  // Publish / hide a stage grade for one team, or publish every graded team of the stage at once.
+  publishStageGrade({ user, params, body }) {
+    const s = ownStage(user, Number(params.id)), rid = Number(params.rid);
+    return setPublished(user, s, [rid], !!body.published);
+  },
+  publishStageGrades({ user, params, body }) {
+    const s = ownStage(user, Number(params.id));
+    return setPublished(user, s, targets('t.stage_id=?', s.id).filter(r => r.score != null).map(r => r.research_id), body.published === undefined ? true : !!body.published);
   },
 };
 
@@ -344,4 +364,24 @@ function attach(stage, body) {
     if (isNew) { added.push(id); notifyParties(research, 'n.stage.assigned', { stage: stage.name, title: research.title, date: stage.deadline ?? '—' }); }
   }
   return added;
+}
+
+// Only the team leader (or the individual owner) submits; members only when the leader allowed it for the team.
+function mayStudentSubmit(user, research) {
+  if (!research.team_id) return research.student_id === user.id ? null : 'Only the owner can submit';
+  if (isLeader(user.id, research.team_id)) return null;
+  return getTeam(research.team_id).members_can_submit ? null : 'Only the team leader can submit stages for the team';
+}
+function setPublished(user, stage, researchIds, published) {
+  let n = 0;
+  for (const rid of researchIds) {
+    const g = db.prepare('SELECT * FROM stage_grades WHERE stage_id=? AND research_id=?').get(stage.id, rid);
+    if (!g) { if (researchIds.length === 1) fail(404, 'There is no grade to publish yet'); continue; }
+    if (!!g.published === published) continue;
+    db.prepare('UPDATE stage_grades SET published=? WHERE stage_id=? AND research_id=?').run(published ? 1 : 0, stage.id, rid);
+    if (published) notifyParties(getResearch(rid), 'n.stage.graded', { stage: stage.name, score: g.score, max: stage.max_grade });
+    audit(user, published ? 'stage.grade_published' : 'stage.grade_hidden', { stageId: stage.id, researchId: rid, detail: { score: g.score } });
+    n++;
+  }
+  return { changed: n, published };
 }

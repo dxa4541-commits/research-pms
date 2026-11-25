@@ -8,6 +8,7 @@ export function updateStatus(research, status) {
 }
 export function addNoteToLatest(research, author, text) {
   const last = db.prepare('SELECT id FROM submissions WHERE research_id=? ORDER BY version_no DESC LIMIT 1').get(research.id);
+  if (!last) return; // a topic registered without a file keeps its feedback in topic_reviews only
   db.prepare('INSERT INTO notes (submission_id,author_id,text) VALUES (?,?,?)').run(last.id, author.id, text);
 }
 
@@ -23,7 +24,7 @@ export function getResearch(id) {
 function canView(user, r) {
   if (user.role === 'admin') return true;
   if (user.role === 'supervisor') return r.supervisor_id === user.id;
-  return r.student_id === user.id || (user.team_id && r.team_id === user.team_id);
+  return r.student_id === user.id || (!!r.team_id && !!db.prepare('SELECT 1 FROM team_members WHERE team_id=? AND user_id=? AND left_at IS NULL').get(r.team_id, user.id));
 }
 export const accessible = (user, id) => {
   const r = getResearch(id);
@@ -38,7 +39,7 @@ export function listFor(user, opts = {}) {
   const where = [], args = [];
   if (user.role === 'supervisor') { where.push('r.supervisor_id=?'); args.push(user.id); }
   else if (user.role === 'student') {
-    where.push('(r.student_id=? OR (? IS NOT NULL AND r.team_id=?))'); args.push(user.id, user.team_id, user.team_id);
+    where.push('(r.student_id=? OR r.team_id IN (SELECT team_id FROM team_members WHERE user_id=? AND left_at IS NULL))'); args.push(user.id, user.id);
   }
   if (opts.status) { where.push('r.status=?'); args.push(opts.status); }
   if (opts.q) { where.push("r.title LIKE ? ESCAPE '\\'"); args.push('%' + opts.q.replace(/[\\%_]/g, '\\$&') + '%'); }
@@ -49,14 +50,14 @@ export function listFor(user, opts = {}) {
       r.deadline,
       (r.deadline IS NOT NULL AND r.deadline < date('now') AND r.status IN ('pending','changes_requested')) AS overdue,
       (SELECT COUNT(*) FROM submissions WHERE research_id=r.id) AS versions,
-      (SELECT g.score FROM research_grades g WHERE g.research_id=r.id) AS grade,
+      (SELECT g.score FROM research_grades g WHERE g.research_id=r.id AND (? OR g.published=1)) AS grade,
       (SELECT COUNT(*) FROM stage_targets x WHERE x.research_id=r.id) AS stages_total,
       (SELECT COUNT(*) FROM stage_targets x WHERE x.research_id=r.id AND
         (SELECT status FROM stage_submissions y WHERE y.stage_id=x.stage_id AND y.research_id=x.research_id ORDER BY attempt_no DESC LIMIT 1)='approved') AS stages_approved
     FROM research r JOIN courses c ON c.id=r.course_id
     JOIN users s ON s.id=r.student_id JOIN users v ON v.id=r.supervisor_id
     LEFT JOIN teams t ON t.id=r.team_id${w}
-    ORDER BY r.id DESC LIMIT ? OFFSET ?`).all(...args, Math.min(opts.limit ?? MAX_PAGE, MAX_PAGE), opts.offset ?? 0);
+    ORDER BY r.id DESC LIMIT ? OFFSET ?`).all(user.role === 'student' ? 0 : 1, ...args, Math.min(opts.limit ?? MAX_PAGE, MAX_PAGE), opts.offset ?? 0);
   Object.defineProperty(rows, 'total', { value: total }); // exposed as X-Total-Count by the server
   return rows;
 }
