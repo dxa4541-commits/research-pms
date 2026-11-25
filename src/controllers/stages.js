@@ -133,7 +133,7 @@ export const stageHandlers = {
     if (body.state === 'postponed' && start === s.start_date && deadline === s.deadline) fail(400, 'Choose a new start date or deadline to postpone the stage');
     db.prepare('UPDATE stages SET state=?, start_date=?, deadline=? WHERE id=?').run(body.state, start, deadline, s.id);
     const key = deadline !== s.deadline ? 'n.stage.deadline' : 'n.stage.state';
-    for (const t of targets('t.stage_id=?', s.id)) notifyParties(getResearch(t.research_id), key, { stage: s.name, state: body.state, date: deadline ?? '' });
+    for (const t of targets('t.stage_id=?', s.id)) notifyParties(getResearch(t.research_id), key, { stage: s.name, state: body.state, date: deadline ?? '—' });
     audit(user, 'stage.state', { stageId: s.id, detail: { from: s.state, to: body.state, start, deadline, prevDeadline: s.deadline } });
     return { state: body.state, start_date: start, deadline };
   },
@@ -341,7 +341,7 @@ function attach(stage, body) {
   }
   for (const id of ids) {
     const { research, added: isNew } = assign(stage, id);
-    if (isNew) { added.push(id); notifyParties(research, 'n.stage.assigned', { stage: stage.name, title: research.title, date: stage.deadline ?? '' }); }
+    if (isNew) { added.push(id); notifyParties(research, 'n.stage.assigned', { stage: stage.name, title: research.title, date: stage.deadline ?? '—' }); }
   }
   return added;
 }

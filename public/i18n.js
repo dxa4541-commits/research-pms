@@ -1,3 +1,4 @@
+import { EXTRA, ERR_EXTRA, ERR_EXTRA_PATTERNS } from './i18n-supervisor.js';
 // UI strings. Server error messages (English) are translated by exact match or pattern; unknown ones show as-is.
 export const I18N = {
   en: {
@@ -87,8 +88,12 @@ export const ERR_AR = {
   'Deadline must be a date (YYYY-MM-DD) or null': 'الموعد النهائي يجب أن يكون تاريخاً صحيحاً', 'Internal server error': 'خطأ داخلي في الخادم',
 };
 export const ERR_AR_PATTERNS = [
-  [/^File type \.(\w+) not allowed/, (m) => `نوع الملف .${m[1]} غير مسموح (المسموح: pdf, doc, docx)`],
+  [/^File type \.(\w+) not allowed \(allowed: (.+)\)/, (m) => `نوع الملف .${m[1]} غير مسموح (المسموح: ${m[2]})`],
   [/^File content does not match its \.(\w+) extension/, (m) => `محتوى الملف لا يطابق امتداد .${m[1]}`],
   [/^(.+) is required/, () => 'يرجى تعبئة الحقول المطلوبة (بحد أقصى للطول)'],
   [/^User (\d+) is not a student/, () => 'أحد المستخدمين المحددين ليس طالباً'],
 ];
+
+// Supervisor features: stages, messaging, dashboard, reports.
+Object.assign(I18N.en, EXTRA.en); Object.assign(I18N.ar, EXTRA.ar);
+Object.assign(ERR_AR, ERR_EXTRA); ERR_AR_PATTERNS.unshift(...ERR_EXTRA_PATTERNS);

@@ -30,6 +30,9 @@
 - **بحث وتصفية** في القوائم (`status`, `q`, `limit`, `offset`).
 - **واجهة بالعربية (RTL) والإنجليزية** مع التبديل من الأعلى.
 
+> **تحديث / Update:** تمت إضافة مراحل مخصصة، تسليمات لكل مرحلة، تقييم بمعايير، رسائل خاصة للفرق، لوحة تحكم وتقارير للدكتور — انظر [SUPERVISOR_REQUIREMENTS.md](SUPERVISOR_REQUIREMENTS.md).
+> Custom stages, per-stage submissions, rubric grading, private team messaging and a supervisor dashboard/reports were added.
+
 ## 5. دورة حياة البحث / Research lifecycle
 ```
 تسجيل الموضوع ──► pending ──► (الدكتور)

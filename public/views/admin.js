@@ -1,21 +1,38 @@
 // Teams, reports, users and courses views.
 import { $, esc, t, badge, dueBadge, state, api, act, courseOpts, roleLabel, render } from '../core.js';
 
-// ---------- Supervisor/Admin: form teams ----------
+// ---------- Supervisor/Admin: form and manage teams ----------
 export async function renderTeams(view) {
   const [teams, students, courses] = await Promise.all([api('GET', '/teams'), api('GET', '/students'), api('GET', '/courses')]);
+  const free = students.filter(s => !s.team_id);
   view.innerHTML = `<div class="card"><h2>${t('formTeam')}</h2><form id="f">
     <label for="n">${t('teamName')}</label><input id="n" required maxlength="100">
     <label for="c">${t('course')}</label><select id="c">${courseOpts(courses)}</select>
-    <label>${t('members')}</label><div class="checks">${students.map(s => `<label><input type="checkbox" value="${s.id}"> ${esc(s.name)} <span class="mute small" dir="ltr">${esc(s.email)}</span>${s.team_id ? ` <span class="mute small">${t('moveWarn')}</span>` : ''}</label>`).join('') || `<span class="mute">${t('noStudents')}</span>`}</div>
+    <label>${t('members')} <span class="mute small">(${t('leaderOpt')}: ◉)</span></label><div class="checks">${students.map(s => `<label><input type="checkbox" value="${s.id}"> ${esc(s.name)} <span class="mute small" dir="ltr">${esc(s.email)}</span>${s.team_id ? ` <span class="mute small">${t('moveWarn')}</span>` : ''}
+      <input type="radio" name="leader" value="${s.id}" title="${t('teamLeader')}" style="margin-inline-start:auto"></label>`).join('') || `<span class="mute">${t('noStudents')}</span>`}</div>
     <p><button type="submit">${t('createTeam')}</button></p></form></div>
-    <div class="card"><h3>${t('tab.teams')}</h3>${teams.length ? `<table><tr><th>${t('team')}</th><th>${t('course')}</th><th>${t('members')}</th></tr>${teams.map(x =>
-      `<tr><td>${esc(x.name)}</td><td>${esc(x.course)}</td><td>${x.members.map(esc).join('، ')}</td></tr>`).join('')}</table>` : `<span class="mute">${t('noTeams')}</span>`}</div>`;
+    ${teams.length ? teams.map(x => `<div class="card"><div class="row"><h3 class="grow" style="margin:0">${esc(x.name)}</h3><span class="mute small">${esc(x.course)}</span>
+        ${state.user.role === 'supervisor' ? `<button class="ghost" data-msg="${x.id}">✉ ${t('messageTeam')}</button>` : ''}</div>
+      <p class="small mute">${t('teamResearch')}: ${x.research ? `<a href="#" data-r="${x.research.id}">${esc(x.research.title)}</a> ${badge(x.research.status)}` : t('noResearchYet')}</p>
+      ${x.research ? `<p class="small">${t('stageProgress', { a: x.stages.approved, t: x.stages.total, p: x.stages.pending_review, m: x.stages.missing, l: x.stages.late })}</p>` : ''}
+      <div>${x.members.map(m => `<div class="row" style="margin:4px 0"><span class="grow">${m.leader ? '★ ' : ''}${esc(m.name)} <span class="mute small" dir="ltr">${esc(m.email)}</span>${m.leader ? ` <span class="badge approved">${t('teamLeader')}</span>` : ''}</span>
+        ${m.leader ? '' : `<button class="ghost" data-lead="${x.id}:${m.id}">${t('setLeader')}</button>`}<button class="ghost" data-rm="${x.id}:${m.id}" aria-label="${t('removeMember')}">✕</button></div>`).join('')}</div>
+      <div class="row" style="margin-top:8px"><select data-addsel="${x.id}"><option value="">${t('addMember')}…</option>${free.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>
+        <button class="ghost" data-add="${x.id}">${t('add')}</button></div></div>`).join('') : `<div class="card"><span class="mute">${t('noTeams')}</span></div>`}`;
   $('#f').onsubmit = act(async e => {
     e.preventDefault();
-    const memberIds = [...view.querySelectorAll('.checks input:checked')].map(i => Number(i.value));
-    await api('POST', '/teams', { name: $('#n').value, courseId: $('#c').value, memberIds }); render();
+    const memberIds = [...view.querySelectorAll('.checks input[type=checkbox]:checked')].map(i => Number(i.value));
+    const lead = view.querySelector('input[name=leader]:checked');
+    await api('POST', '/teams', { name: $('#n').value, courseId: $('#c').value, memberIds, leaderId: lead && memberIds.includes(Number(lead.value)) ? Number(lead.value) : undefined }); render();
   }, 'toast.team');
+  const upd = (path, body) => act(async () => { await api('PUT', path, body); render(); }, 'toast.teamUpdated');
+  view.querySelectorAll('[data-lead]').forEach(b => { const [tid, uid] = b.dataset.lead.split(':'); b.onclick = upd(`/teams/${tid}/leader`, { userId: Number(uid) }); });
+  view.querySelectorAll('[data-rm]').forEach(b => { const [tid, uid] = b.dataset.rm.split(':'); b.onclick = () => confirm(t('confirmRemoveMember')) && upd(`/teams/${tid}/members`, { remove: [Number(uid)] })(); });
+  view.querySelectorAll('[data-add]').forEach(b => b.onclick = () => {
+    const v = view.querySelector(`[data-addsel="${b.dataset.add}"]`).value; if (v) upd(`/teams/${b.dataset.add}/members`, { add: [Number(v)] })();
+  });
+  view.querySelectorAll('[data-msg]').forEach(b => b.onclick = () => { state.thread = `t${b.dataset.msg}`; state.tab = 'messages'; render(); });
+  view.querySelectorAll('[data-r]').forEach(a => a.onclick = e => { e.preventDefault(); state.tab = 'research'; state.openId = Number(a.dataset.r); render(); });
 }
 
 // ---------- Admin ----------

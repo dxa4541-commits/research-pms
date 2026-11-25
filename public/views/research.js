@@ -1,4 +1,5 @@
 // Student / supervisor views: research list, research detail, register topic, my students.
+import { renderResearchStages } from './stages.js';
 import { $, esc, t, tErr, badge, fmtSize, fmtDate, fmtDay, dueBadge, dueText, state, api, download, readFile, act, courseOpts, render } from '../core.js';
 
 // ---------- Research list (student / supervisor) ----------
@@ -6,10 +7,10 @@ export async function renderResearchList(view) {
   const list = await api('GET', '/research');
   const sup = state.user.role === 'supervisor';
   view.innerHTML = `<div class="card"><h2>${sup ? t('assigned') : t('mine')}</h2>
-    ${list.length ? `<table><tr><th>${t('title')}</th><th>${t('status')}</th><th>${sup ? t('student') : t('supervisor')}</th><th>${t('deadline')}</th><th>${t('versions')}</th><th>${t('grade')}</th></tr>
+    ${list.length ? `<table><tr><th>${t('title')}</th><th>${t('status')}</th><th>${sup ? t('student') : t('supervisor')}</th><th>${t('deadline')}</th><th>${t('versions')}</th><th>${t('stagesProgress')}</th><th>${t('grade')}</th></tr>
     ${list.map(r => `<tr class="click ${r.overdue ? 'late' : ''}" data-id="${r.id}"><td><b>${esc(r.title)}</b><div class="small mute">${esc(r.course)}${r.team ? ' · ' + t('team') + ': ' + esc(r.team) : ''}</div></td>
       <td>${badge(r.status)}</td><td>${esc(sup ? r.student : r.supervisor)}</td><td>${dueText(r)}</td><td>${r.versions}</td>
-      <td>${r.grade ?? '—'}</td></tr>`).join('')}</table>`
+      <td>${r.stages_total ? `${r.stages_approved}/${r.stages_total}` : '—'}</td><td>${r.grade ?? '—'}</td></tr>`).join('')}</table>`
       : `<p class="mute">${sup ? t('noAssigned') : t('noneSubmitted')}</p>`}</div>`;
   view.querySelectorAll('tr.click').forEach(tr => tr.onclick = () => { state.openId = Number(tr.dataset.id); render(); });
 }
@@ -25,13 +26,17 @@ export async function renderDetail(view, id) {
         <span class="badge ${r.grade != null ? 'approved' : 'pending'}">${t('grade')}: ${r.grade != null ? r.grade + '/100' : t('notGraded')}</span></div>
       <p class="small mute">${t('student')}: ${esc(r.student)} · ${t('supervisor')}: ${esc(r.supervisor)} · ${t('course')}: ${esc(r.course)}${r.team ? ' · ' + t('team') + ': ' + esc(r.team) : ''}
       ${r.deadline ? ` · ${t('deadline')}: ${fmtDay(r.deadline)}${dueBadge({ overdue })}` : ''}</p>
+      ${r.description ? `<p>${esc(r.description)}</p>` : ''}
+      ${r.status === 'rejected' && r.rejection_reason ? `<p class="small"><b class="overdue">${t('rejectionReason')}:</b> ${esc(r.rejection_reason)}</p>` : ''}
       ${role === 'supervisor' ? `<label for="cm">${t('comment')}</label><textarea id="cm"></textarea>
         <div class="row"><button class="ok" data-d="approve">${t('approve')}</button><button class="warn" data-d="request_changes">${t('requestChanges')}</button>
-        <button class="bad" data-d="reject">${t('reject')}</button></div>
-        <div class="row" style="margin-top:12px"><input type="number" min="0" max="100" step="0.5" placeholder="${t('score')}" style="width:110px" id="gs" value="${r.grade ?? ''}">
-          <button class="ghost" id="gb">${t('gradeBtn')}</button></div>` : ''}
+        <button class="bad" data-d="reject">${t('reject')}</button></div><p class="small mute">${t('rejectHint')}</p>` : ''}
       ${r.status === 'changes_requested' && role === 'student' ? `<p class="small"><b>${t('changesBanner')}</b></p>` : ''}
     </div>
+    ${r.status === 'approved' || r.stage_totals.stages ? `<div class="card"><h3>${t('stagesTitle')}</h3><div id="stg"></div></div>` : ''}
+    ${role === 'supervisor' ? `<div class="card"><h3>${t('finalGrade')}</h3>${r.stage_totals.stages ? `<p class="small mute">${t('calcTotal', { earned: r.stage_totals.earned, max: r.stage_totals.total_max, pct: r.stage_totals.percent ?? 0 })}</p>` : ''}
+      <div class="row"><input type="number" min="0" max="100" step="0.5" placeholder="${t('score')}" style="width:110px" id="gs" value="${r.grade ?? ''}">
+        ${r.stage_totals.percent != null ? `<button class="ghost" id="gcalc">${t('useCalc')}</button>` : ''}<input class="grow" id="gcm" placeholder="${t('gradeComment')}" value="${esc(r.grade_comment ?? '')}"><button id="gb">${t('gradeBtn')}</button></div></div>` : ''}
     ${canEdit ? `<div class="card"><h3>${t('uploadNew')}</h3><div class="row"><input class="grow" type="file" id="nv" accept=".pdf,.doc,.docx">
       <button id="up">${t('upload')}</button></div><p class="small mute">${t('fileHint')}</p></div>` : ''}
     <div class="card"><h3>${t('versionsFeedback')}</h3>${r.submissions.map(s => `
@@ -40,7 +45,14 @@ export async function renderDetail(view, id) {
         ${s.notes.map(n => `<div class="note"><span class="small mute">${esc(n.author)} · ${fmtDate(n.created_at)}</span><br>${esc(n.text)}</div>`).join('')}
         ${role === 'supervisor' ? `<div class="row" style="margin-top:8px"><input class="grow" placeholder="${t('addNotePh')}" data-note="${s.id}">
           <button data-addnote="${s.id}">${t('addNote')}</button></div>` : ''}
-      </div>`).join('')}</div>`;
+      </div>`).join('')}</div>
+    ${role === 'supervisor' ? `<div class="card"><div class="row"><h3 class="grow" style="margin:0">${t('history')}</h3><button class="ghost" id="hs">${t('showHistory')}</button></div><div id="hist"></div></div>` : ''}`;
+  if ($('#stg')) renderResearchStages($('#stg'), id, { role, after: null });
+  if ($('#hs')) $('#hs').onclick = act(async () => {
+    const h = await api('GET', `/research/${id}/history`);
+    $('#hist').innerHTML = h.length ? `<table>${h.map(x => `<tr><td class="small mute">${fmtDate(x.created_at)}</td><td>${esc(x.actor ?? '—')}</td><td><code>${esc(x.action)}</code></td><td class="small mute">${esc(x.detail ? JSON.stringify(x.detail) : '')}</td></tr>`).join('')}</table>` : `<span class="mute">${t('noHistory')}</span>`;
+  });
+  if ($('#gcalc')) $('#gcalc').onclick = () => { $('#gs').value = Math.round(r.stage_totals.percent * 10) / 10; };
   $('#back').onclick = () => { state.openId = null; render(); };
   view.querySelectorAll('[data-dl]').forEach(b => b.onclick = () => download(b.dataset.dl, b.dataset.name));
   view.querySelectorAll('[data-d]').forEach(b => b.onclick = act(async () => {
@@ -53,7 +65,7 @@ export async function renderDetail(view, id) {
     await api('POST', `/submissions/${b.dataset.addnote}/notes`, { text: view.querySelector(`[data-note="${b.dataset.addnote}"]`).value }); render();
   }, 'toast.note'));
   if ($('#gb')) $('#gb').onclick = act(async () => {
-    await api('PUT', `/research/${id}/grade`, { score: $('#gs').value }); render();
+    await api('PUT', `/research/${id}/grade`, { score: $('#gs').value, comment: $('#gcm').value }); render();
   }, 'toast.grade');
   if ($('#up')) $('#up').onclick = act(async () => {
     const f = $('#nv').files[0]; if (!f) throw new Error(t('chooseFile'));
@@ -69,6 +81,7 @@ export async function renderSubmit(view) {
   const [courses, sups] = await Promise.all([api('GET', '/courses'), api('GET', '/supervisors')]);
   view.innerHTML = `<div class="card"><h2>${t('submitTitle')}</h2><form id="f">
     <label for="t">${t('title')}</label><input id="t" required maxlength="200">
+    <label for="ds">${t('description')}</label><textarea id="ds" maxlength="2000" placeholder="${t('descriptionPh')}"></textarea>
     <label for="c">${t('course')}</label><select id="c">${courseOpts(courses)}</select>
     <label for="s">${t('supervisor')}</label><select id="s">${courseOpts(sups)}</select>
     <label for="fl">${t('proposalFile')}</label>
@@ -78,7 +91,7 @@ export async function renderSubmit(view) {
     e.preventDefault();
     const f = $('#fl').files[0];
     if (f.size > 10 * 1048576) throw new Error(tErr('File exceeds the 10 MB limit'));
-    const r = await api('POST', '/research', { title: $('#t').value, courseId: $('#c').value, supervisorId: $('#s').value, filename: f.name, data: await readFile(f) });
+    const r = await api('POST', '/research', { title: $('#t').value, description: $('#ds').value, courseId: $('#c').value, supervisorId: $('#s').value, filename: f.name, data: await readFile(f) });
     state.tab = 'myResearch'; state.openId = r.id; render();
   }, 'toast.research');
 }

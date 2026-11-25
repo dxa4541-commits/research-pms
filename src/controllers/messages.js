@@ -21,7 +21,7 @@ function mayAccess(user, m) {
 function supervisorTargets(supId) {
   const out = new Map();
   for (const r of db.prepare('SELECT * FROM research WHERE supervisor_id=?').all(supId)) {
-    const t = targetOf(r); out.set(t.team_id ? `t${t.team_id}` : `s${t.student_id}`, t);
+    const t = targetOf(r); const k = t.team_id ? `t${t.team_id}` : `s${t.student_id}`; if (!out.has(k)) out.set(k, { ...t, research_id: r.id });
   }
   for (const t of db.prepare('SELECT id FROM teams WHERE created_by=?').all(supId)) out.set(`t${t.id}`, { team_id: t.id, student_id: null });
   return out;
@@ -70,7 +70,7 @@ export const messageHandlers = {
     for (const [key, target] of supervisorTargets(user.id)) {
       const last = db.prepare(`${MSG_SQL} WHERE m.supervisor_id=? AND (${target.team_id ? 'm.team_id=?' : 'm.student_id=?'}) ORDER BY m.id DESC LIMIT 1`).get(user.id, target.team_id ?? target.student_id);
       const members = db.prepare(target.team_id ? 'SELECT name FROM users WHERE team_id=?' : 'SELECT name FROM users WHERE id=?').all(target.team_id ?? target.student_id).map(x => x.name);
-      out.push({ key, team_id: target.team_id, student_id: target.student_id, name: targetName(target), members, last: last ?? null });
+      out.push({ key, research_id: target.research_id ?? null, team_id: target.team_id, student_id: target.student_id, name: targetName(target), members, last: last ?? null });
     }
     return out.sort((a, b) => (b.last?.id ?? 0) - (a.last?.id ?? 0));
   },

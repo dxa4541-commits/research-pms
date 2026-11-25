@@ -2,10 +2,12 @@
 import { $, esc, t, fmtDate, state, api, act, langBtn, bindLang, roleLabel, notifText, setRender } from './core.js';
 import { renderResearchList, renderDetail, renderSubmit, renderStudents } from './views/research.js';
 import { renderTeams, renderReports, renderUsers, renderCourses } from './views/admin.js';
+import { renderDashboard, renderStages, renderSupervisorReports } from './views/supervisor.js';
+import { renderMessages } from './views/messages.js';
 
 // ---------- Layout ----------
 const TABS = {
-  student: ['myResearch', 'submit'], supervisor: ['research', 'students', 'teams'], admin: ['reports', 'users', 'courses'],
+  student: ['myResearch', 'submit', 'messages'], supervisor: ['dashboard', 'research', 'stages', 'students', 'teams', 'messages', 'reports'], admin: ['reports', 'users', 'courses'],
 };
 async function render() {
   const app = $('#app');
@@ -28,16 +30,17 @@ async function render() {
       `<div class="${n.is_read ? '' : 'unread'}">${esc(notifText(n.message))}<div class="small mute" style="border:0;padding:0">${fmtDate(n.created_at)}</div></div>`).join('') : `<span class="mute">${t('noNotifs')}</span>`}</div>` : ''}
     <main><nav>${tabs.map(k => `<button class="${k === state.tab ? 'on' : ''}" data-tab="${k}">${t('tab.' + k)}</button>`).join('')}</nav><div id="view"></div></main>`;
   bindLang();
-  $('#logout').onclick = act(async () => { await api('POST', '/logout'); localStorage.removeItem('token'); Object.assign(state, { user: null, tab: null, openId: null, notifs: [], showNotifs: false }); render(); });
+  $('#logout').onclick = act(async () => { await api('POST', '/logout'); localStorage.removeItem('token'); Object.assign(state, { user: null, tab: null, openId: null, openStageId: null, stageForm: null, thread: null, expanded: null, notifs: [], showNotifs: false }); render(); });
   $('#bell').onclick = async () => {
     state.showNotifs = !state.showNotifs;
     if (!state.showNotifs && unread) await api('POST', '/notifications/read').catch(() => {});
     render();
   };
-  document.querySelectorAll('nav button').forEach(b => b.onclick = () => { state.tab = b.dataset.tab; state.openId = null; render(); });
+  document.querySelectorAll('nav button').forEach(b => b.onclick = () => { state.tab = b.dataset.tab; state.openId = null; state.openStageId = null; state.stageForm = null; render(); });
   const view = $('#view');
   const views = { myResearch: renderResearchList, research: renderResearchList, submit: renderSubmit, students: renderStudents,
-    teams: renderTeams, reports: renderReports, users: renderUsers, courses: renderCourses };
+    teams: renderTeams, reports: u.role === 'admin' ? renderReports : renderSupervisorReports, users: renderUsers, courses: renderCourses,
+    dashboard: renderDashboard, stages: renderStages, messages: renderMessages };
   if (state.openId && ['myResearch', 'research'].includes(state.tab)) await renderDetail(view, state.openId);
   else await views[state.tab](view);
 }

@@ -45,3 +45,19 @@ tr.click{cursor:pointer}tr.click:hover{background:var(--bg)}
 .overdue{color:var(--bad)}.langbtn{min-width:64px}
 input[type=date]{width:auto}
 tr.late td:first-child{border-inline-start:3px solid var(--bad)}
+
+/* stages, messaging, dashboard */
+.pending,.submitted,.scheduled,.upcoming{color:var(--info)}.open{color:var(--ok)}.closed,.not_submitted{color:var(--mute)}.postponed{color:var(--warn)}
+.stagebox{border:1px solid var(--line);border-radius:10px;padding:12px;margin:12px 0}.stagebox h4{margin:12px 0 4px}
+.gradebox{background:var(--bg);border-radius:8px;padding:10px;margin-top:10px}
+.inl{display:inline-flex;gap:6px;align-items:center;font-weight:400;margin:0}.inl input[type=checkbox]{width:auto}
+.bar{background:var(--line);border-radius:99px;height:8px;overflow:hidden;min-width:70px}.bar i{display:block;height:100%;background:var(--ok)}
+.stat.click{cursor:pointer}.stat.click:hover,.note.click:hover{background:var(--bg)}.note.click{cursor:pointer}
+.stagecard h3{margin:0}.exprow>td{background:var(--bg)}
+.msgwrap{display:grid;grid-template-columns:minmax(200px,280px) 1fr;gap:14px;align-items:start}
+.thread{padding:8px;border-radius:8px;cursor:pointer;border:1px solid transparent}.thread:hover{background:var(--bg)}.thread.on{border-color:var(--brand);background:var(--bg)}
+.ellip{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.msgs{max-height:55vh;overflow:auto;display:flex;flex-direction:column;gap:8px;margin:10px 0;padding:4px}
+.msg{background:var(--bg);border-radius:10px;padding:8px 12px;max-width:85%;align-self:flex-start}.msg.mine{align-self:flex-end;background:color-mix(in srgb,var(--brand) 14%,var(--card))}
+@media(max-width:700px){.msgwrap{grid-template-columns:1fr}}
+[hidden]{display:none!important}

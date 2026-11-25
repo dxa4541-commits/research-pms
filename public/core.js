@@ -26,7 +26,10 @@ export const tErr = m => {
   return m;
 };
 export const notifText = raw => {
-  try { const { k, p } = JSON.parse(raw); return t(k, { ...p, comment: p.comment ? '— ' + p.comment : '' }); } catch { return raw; }
+  try {
+    const { k, p } = JSON.parse(raw);
+    return t(k, { ...p, comment: p.comment ? '— ' + p.comment : '', state: p.state ? t('state.' + p.state) : '' });
+  } catch { return raw; }
 };
 
 export const badge = s => `<span class="badge ${s}">${t('st.' + s)}</span>`;
@@ -36,7 +39,7 @@ export const fmtDay = d => new Date(d + 'T00:00:00').toLocaleDateString(lang ===
 export const dueBadge = r => r.overdue ? ` <span class="badge overdue">${t('overdue')}</span>` : '';
 export const dueText = r => r.deadline ? `${fmtDay(r.deadline)}${dueBadge(r)}` : '<span class="mute">—</span>';
 
-export const state = { user: null, tab: null, openId: null, notifs: [], showNotifs: false };
+export const state = { user: null, tab: null, openId: null, openStageId: null, stageForm: null, thread: null, notifs: [], showNotifs: false };
 
 export function toast(msg, err) {
   const el = $('#toast'); el.textContent = msg; el.className = 'show' + (err ? ' err' : '');
@@ -54,8 +57,9 @@ export async function api(method, path, body) {
   if (!res.ok) throw new Error(tErr(data.error || 'Request failed'));
   return data;
 }
-export async function download(id, name) {
-  const res = await fetch(`/api/submissions/${id}/file`, { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } });
+export const download = (id, name) => downloadPath(`/api/submissions/${id}/file`, name);
+export async function downloadPath(path, name) {
+  const res = await fetch(path, { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } });
   if (!res.ok) return toast(tErr((await res.json()).error), true);
   const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(await res.blob()), download: name });
   a.click(); URL.revokeObjectURL(a.href);
@@ -69,4 +73,6 @@ export const act = (fn, okKey) => async (...a) => {
 export const langBtn = () => `<button class="ghost langbtn" id="lang">${lang === 'ar' ? 'English' : 'العربية'}</button>`;
 export const bindLang = () => { $('#lang').onclick = () => setLang(lang === 'ar' ? 'en' : 'ar'); };
 export const roleLabel = r => t('role.' + r);
+export const fmtDay2 = d => d ? fmtDay(d) : '—';
+export const mb = n => n == null ? '' : n;
 export const courseOpts = cs => cs.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
