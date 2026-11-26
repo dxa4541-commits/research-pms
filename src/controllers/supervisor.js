@@ -4,6 +4,7 @@ import { fail } from '../errors.js';
 import { listFor, getResearch } from '../research.js';
 import { today, targets, stageTotals, getStage } from '../stages.js';
 import { checkDeadlines } from '../deadlines.js';
+import { activeMembers } from '../teams.js';
 
 const addDays = (d, n) => new Date(Date.parse(d + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
 const label = r => r.team ?? r.student;
@@ -15,7 +16,29 @@ async function overview(supId) {
   return { research, rows };
 }
 
+// Project ideas (proposals) of the instructor's current courses, newest activity first, with what a decision needs:
+// the idea itself, the team and its members, the latest proposal file, when it was (re)submitted and the last feedback.
+async function proposals(supId) {
+  const rows = await db.prepare(`SELECT r.id,r.title,r.description,r.problem,r.objectives,r.status,r.created_at,r.rejection_reason,r.team_id,r.workflow_started_at,
+      c.name AS course, s.name AS student, tm.name AS team,
+      (SELECT MAX(a.created_at) FROM audit_log a WHERE a.research_id=r.id AND a.action IN ('topic.registered','topic.edited')) AS submitted_at
+    FROM research r JOIN courses c ON c.id=r.course_id JOIN users s ON s.id=r.student_id LEFT JOIN teams tm ON tm.id=r.team_id
+    WHERE r.supervisor_id=? AND c.archived_at IS NULL ORDER BY r.id DESC`).all(supId);
+  const out = [];
+  for (const r of rows) {
+    const file = await db.prepare('SELECT id,filename,size,version_no,created_at FROM submissions WHERE research_id=? ORDER BY version_no DESC LIMIT 1').get(r.id);
+    const reviews = await db.prepare(`SELECT v.decision,v.comment,v.created_at FROM topic_reviews v WHERE v.research_id=? ORDER BY v.id DESC`).all(r.id);
+    out.push({
+      ...r, submitted_at: r.submitted_at ?? r.created_at, file: file ?? null,
+      members: r.team_id ? (await activeMembers(r.team_id)).map(m => ({ name: m.name, leader: m.role === 'leader' })) : [{ name: r.student, leader: false }],
+      last_review: reviews[0] ?? null, resubmitted: r.status === 'pending' && reviews.some(v => v.decision === 'changes_requested'), reviews: reviews.length,
+    });
+  }
+  return out.sort((a, b) => (b.submitted_at ?? '').localeCompare(a.submitted_at ?? ''));
+}
+
 export const supervisorHandlers = {
+  proposals: ({ user }) => proposals(user.id),
   async dashboard({ user }) {
     await checkDeadlines();
     const { research, rows } = await overview(user.id);

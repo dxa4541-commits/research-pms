@@ -117,6 +117,7 @@ const routes = [
   // Supervisor dashboard & reports
   ['GET', '/api/supervisor/dashboard', 'dashboard', [V]],
   ['GET', '/api/supervisor/settings', 'getWorkflowSettings', [V]],
+  ['GET', '/api/supervisor/proposals', 'proposals', [V]],
   ['PUT', '/api/supervisor/settings', 'updateWorkflowSettings', [V]],
   ['POST', '/api/supervisor/workflow/start-all', 'startAllWorkflows', [V]],
   ['POST', '/api/research/:id/workflow/start', 'startResearchWorkflow', [V]],

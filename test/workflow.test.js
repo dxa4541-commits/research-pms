@@ -282,5 +282,20 @@ assert.ok(newStages.length === docStages && newStages.every(x => x.state === 'sc
 await is(call('POST', `/courses/${course.id}/reopen`, null, admin), 200, 'admin can reopen an ended term');
 assert.ok((await call('GET', '/research', null, doc)).body.some(x => x.id === rid)); ok('reopened research is listed again');
 
+// ---------- Project ideas page ----------
+await call('POST', '/users', { name: 'Nora', email: 'nora@example.com', password: 'secret1', role: 'student', courseIds: [course.id] }, admin);
+const nora = await login('nora@example.com', 'secret1');
+const nid = (await is(call('POST', '/research', { title: 'Campus Map', description: 'Indoor map', problem: 'Lost visitors', objectives: 'Navigation', courseId: course.id, supervisorId: drSara.id, filename: 'idea.pdf', data: pdf }, nora), 200, 'a student sends an idea with a file')).body.id;
+await is(call('GET', '/supervisor/proposals', null, nora), 403, 'students have no ideas page');
+let ideas = (await is(call('GET', '/supervisor/proposals', null, doc), 200, 'instructor lists project ideas')).body;
+let idea = ideas.find(x => x.id === nid);
+assert.equal(idea.status, 'pending'); assert.equal(idea.file.filename, 'idea.pdf'); assert.equal(idea.problem, 'Lost visitors'); assert.deepEqual(idea.members.map(m => m.name), ['Nora']); assert.ok(idea.submitted_at); ok('each idea carries its text, file, members and time');
+assert.equal(ideas[0].id, nid); ok('newest idea first');
+assert.ok(ideas.some(x => x.id === rid && x.status === 'approved' && x.team === 'Owls' && x.members.length === 2)); ok('team ideas list the members');
+await call('POST', `/research/${nid}/request-changes`, { comment: 'Narrow it' }, doc);
+await call('PUT', `/research/${nid}/topic`, { title: 'Campus Map v2', description: 'Library floor only' }, nora);
+idea = (await call('GET', '/supervisor/proposals', null, doc)).body.find(x => x.id === nid);
+assert.equal(idea.status, 'pending'); assert.equal(idea.resubmitted, true); assert.equal(idea.last_review.comment, 'Narrow it'); ok('a revised idea is flagged and shows the last feedback');
+
 console.log(`\nAll ${n} workflow checks passed`);
 server.close(); process.exit(0);

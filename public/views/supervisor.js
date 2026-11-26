@@ -1,6 +1,6 @@
 // Supervisor views: dashboard, submissions & reviews queue, stage management, grades overview and reports.
 import { $, esc, t, badge, toast, fmtDate, fmtDay, state, api, downloadPath, act, courseOpts, render, notifText } from '../core.js';
-import { icon, avatar, statCard, th, sortRows, bindSort, dateField, bindDateFields, num, progress, remBadge, pageHeader, empty, setCrumbs, confirmDialog, tabsHtml, paginate, pagerHtml, bindPager, go, modal } from '../ui.js';
+import { icon, avatar, statCard, th, sortRows, bindSort, dateField, bindDateFields, num, progress, remBadge, pageHeader, empty, setCrumbs, confirmDialog, tabsHtml, paginate, pagerHtml, bindPager, go, modal, canView, viewPath } from '../ui.js';
 import { renderResearchStages, stateBadge, auditItem } from './stages.js';
 import { notifMeta } from './notifications.js';
 
@@ -276,4 +276,55 @@ async function openCopy(stages) {
     const r = await api('POST', '/stages/copy', { stageIds, courseId: m.el.querySelector('#cpc').value, shiftDays: m.el.querySelector('#cpd').value || 0 });
     m.close(); toast(t('cp.done', { n: r.created })); render();
   });
+}
+
+// ---------- Project ideas: every proposal in one place, decided right on its card ----------
+const PS = ['pending', 'changes_requested', 'approved', 'rejected'];
+export async function renderProposals(view) {
+  const all = await api('GET', '/supervisor/proposals');
+  const counts = Object.fromEntries(PS.map(s => [s, all.filter(p => p.status === s).length]));
+  const f = PS.includes(state.pfStatus) ? state.pfStatus : counts.pending ? 'pending' : 'all';
+  const q = (state.pfQ ?? '').toLowerCase();
+  const list = all.filter(p => (f === 'all' || p.status === f) && (!q || `${p.title} ${p.team ?? ''} ${p.members.map(m => m.name).join(' ')}`.toLowerCase().includes(q)));
+  view.innerHTML = `${pageHeader({ title: t('pp.title'), sub: t('pp.sub') })}
+    <div class="card"><div class="row" style="gap:10px"><div class="chips grow" role="group">${['all', ...PS].map(k => `<button class="${f === k ? 'on' : ''}" data-pf="${k}">${t(k === 'all' ? 'pp.all' : 'pp.s.' + k)} (${k === 'all' ? all.length : counts[k]})</button>`).join('')}</div>
+      <form class="search" id="pfs" role="search" style="min-width:220px">${icon('search')}<input id="pfq" type="search" value="${esc(state.pfQ ?? '')}" placeholder="${t('pp.search')}" aria-label="${t('pp.search')}"></form></div></div>
+    ${list.length ? `<div class="stack">${list.map(ideaCard).join('')}</div>` : `<div class="card">${empty({ ic: 'fileText', title: t(f === 'pending' ? 'pp.noneWaiting' : 'pp.none'), text: f === 'pending' ? t('pp.noneWaitingD') : '' })}</div>`}`;
+  view.querySelectorAll('[data-pf]').forEach(b => b.onclick = () => { state.pfStatus = b.dataset.pf; render(); });
+  $('#pfs').onsubmit = e => { e.preventDefault(); state.pfQ = $('#pfq').value.trim(); render(); };
+  view.querySelectorAll('[data-pview]').forEach(b => b.onclick = () => viewPath(b.dataset.pview, b.dataset.name));
+  view.querySelectorAll('[data-pdl]').forEach(b => b.onclick = () => downloadPath(b.dataset.pdl, b.dataset.name));
+  view.querySelectorAll('[data-popen]').forEach(b => b.onclick = () => { state.tab = 'research'; state.openId = Number(b.dataset.popen); state.researchTab = 'topic'; render(); });
+  view.querySelectorAll('[data-pmore]').forEach(b => b.onclick = () => { const x = view.querySelector(`[data-pfull="${b.dataset.pmore}"]`); x.hidden = !x.hidden; b.textContent = x.hidden ? t('pp.more') : t('pp.less'); });
+  view.querySelectorAll('[data-pd]').forEach(b => b.onclick = act(async () => {
+    const [id, d] = b.dataset.pd.split(':'), box = view.querySelector(`[data-pc="${id}"]`), comment = box.value.trim(), p = all.find(x => x.id === Number(id));
+    if (d !== 'approve' && !comment) { box.focus(); throw new Error(t('rejectHint')); }
+    if (!await confirmDialog({ title: t('cf.t.' + d), text: t('cf.t.text', { n: p.title }), confirm: t('cf.t.' + d + '.btn'), tone: d === 'approve' ? 'ok' : d === 'reject' ? 'bad' : 'warn' })) return;
+    if (d === 'request_changes') { await api('POST', `/research/${id}/request-changes`, { comment }); toast(t('toast.decision')); }
+    else {
+      const res = await api('POST', `/research/${id}/approve`, { decision: d, comment });
+      toast(res.workflow?.first ? t('toast.workflowStarted', { s: res.workflow.first }) : res.workflow?.started ? t('toast.noStagesYet') : t('toast.decision'));
+    }
+    render();
+  }));
+}
+function ideaCard(p) {
+  const open = p.status === 'pending' || p.status === 'changes_requested';
+  const more = p.problem || p.objectives || (p.description ?? '').length > 280;
+  const fileUrl = p.file ? `/api/submissions/${p.file.id}/file` : null;
+  return `<section class="card idea ${p.status === 'pending' ? 'accent' : ''}"><div class="card-h"><div><h3 style="margin:0">${esc(p.title)}</h3>
+      <span class="small mute">${p.team ? `${icon('users')} ${esc(p.team)}` : `${icon('user')} ${t('individual')}`} · ${p.members.map(m => esc(m.name) + (m.leader ? ' ★' : '')).join('، ')} · ${esc(p.course)}</span></div>
+      <div class="row">${p.resubmitted ? `<span class="badge info">${icon('refresh')}${t('pp.resubmitted')}</span>` : ''}${badge(p.status)}</div></div>
+    <p class="small mute" style="margin-top:-6px">${icon('clock')} ${t(p.resubmitted ? 'pp.resentOn' : 'pp.sentOn', { d: fmtDate(p.submitted_at) })}</p>
+    ${p.description ? `<p style="white-space:pre-line">${esc(p.description.length > 280 ? p.description.slice(0, 280) + '…' : p.description)}</p>` : `<p class="mute small">${t('rd.noDesc')}</p>`}
+    ${more ? `<div data-pfull="${p.id}" hidden>${p.description && p.description.length > 280 ? `<p style="white-space:pre-line">${esc(p.description)}</p>` : ''}${p.problem ? `<h4>${t('problemL')}</h4><p style="white-space:pre-line">${esc(p.problem)}</p>` : ''}${p.objectives ? `<h4>${t('objectivesL')}</h4><p style="white-space:pre-line">${esc(p.objectives)}</p>` : ''}</div>
+      <button class="link small" data-pmore="${p.id}">${t('pp.more')}</button>` : ''}
+    ${p.file ? `<div class="row" style="gap:6px;margin-top:8px">${canView(p.file.filename) ? `<button class="ghost sm" data-pview="${fileUrl}" data-name="${esc(p.file.filename)}">${icon('eye')} ${t('vw.view')}</button>` : ''}<button class="ghost sm" data-pdl="${fileUrl}" data-name="${esc(p.file.filename)}">${icon('download')} <span dir="ltr">${esc(p.file.filename)}</span></button></div>` : ''}
+    ${p.last_review?.comment ? `<div class="note"><span class="small mute">${t('pp.lastFeedback')} · ${t('st.' + p.last_review.decision)} · ${fmtDate(p.last_review.created_at)}</span><p>${esc(p.last_review.comment)}</p></div>` : ''}
+    ${open ? `<div class="gradebox"><label for="pc${p.id}">${t('comment')}</label><textarea id="pc${p.id}" data-pc="${p.id}" maxlength="1000" rows="2" style="min-height:64px" placeholder="${t('pp.commentPh')}"></textarea>
+      <div class="row" style="margin-top:10px"><button class="ok" data-pd="${p.id}:approve">${icon('check')} ${t('approve')}</button><button class="warn" data-pd="${p.id}:request_changes">${icon('edit')} ${t('requestChanges')}</button><button class="bad" data-pd="${p.id}:reject">${icon('x')} ${t('reject')}</button>
+      <button class="ghost" data-popen="${p.id}">${t('pp.openProject')} ${icon('arrow')}</button></div>
+      ${p.status === 'changes_requested' ? `<p class="hint">${t('pp.waitingStudent')}</p>` : `<p class="hint">${t('pp.approveHint')}</p>`}</div>`
+      : `<div class="row" style="margin-top:8px"><button class="ghost sm" data-popen="${p.id}">${t('pp.openProject')} ${icon('arrow')}</button>${p.status === 'rejected' && p.rejection_reason ? `<span class="small mute">${t('rejectionReason')}: ${esc(p.rejection_reason)}</span>` : ''}</div>`}
+  </section>`;
 }
