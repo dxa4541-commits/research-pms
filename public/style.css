@@ -140,7 +140,7 @@ textarea{min-height:92px;resize:vertical}
 .bar.lg{height:9px}.bar.warn i{background:var(--amber)}.bar.bad i{background:var(--bad)}
 
 /* ---------- Tables ---------- */
-.table-wrap{overflow-x:auto;border-radius:var(--r-sm)}
+.table-wrap{overflow-x:auto;border-radius:var(--r-sm);position:relative} /* keeps .sr-only cells inside the scroll box */
 table{width:100%;border-collapse:separate;border-spacing:0}
 th,td{text-align:start;padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
 th{font-size:.75rem;color:var(--mute);text-transform:uppercase;letter-spacing:.05em;font-weight:700;white-space:nowrap;background:var(--surface-2)}
@@ -421,3 +421,12 @@ html[lang=ar] .sb-sec{letter-spacing:0;font-size:.76rem}
 .ptrack-step.current{color:var(--ink);font-weight:600}.ptrack-step.current .ptrack-dot{border-color:var(--primary);background:var(--primary);color:var(--on-primary)}
 .ptrack-step.bad{color:var(--bad)}.ptrack-step.bad .ptrack-dot{border-color:var(--bad);background:var(--bad-bg);color:var(--bad)}
 @media (max-width:560px){.ptrack-step:not(:last-child)::after{display:none}}
+
+/* ---------- File viewer panel (beside the page; the page reflows into the remaining width) ---------- */
+.viewer{position:fixed;top:0;bottom:0;inset-inline-end:0;width:min(48vw,900px);z-index:60;display:flex;flex-direction:column;background:var(--surface);border-inline-start:1px solid var(--line-strong);box-shadow:0 0 40px rgb(0 0 0 / .18)}
+.viewer-h{display:flex;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
+.viewer-h b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.viewer-b{flex:1;width:100%;border:0;background:#fff}.viewer-b.img{overflow:auto;display:grid;place-items:center;background:var(--bg)}.viewer-b.img img{max-width:100%}
+body.viewer-open .main-col{margin-inline-end:min(48vw,900px)}
+.filechip{display:inline-flex;gap:4px;align-items:center}
+@media(max-width:900px){.viewer{width:100vw}body.viewer-open .main-col{margin-inline-end:0}.viewer-h .vl{display:none}}

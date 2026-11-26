@@ -78,13 +78,14 @@ export const supervisorHandlers = {
   async researchHistory({ user, params }) {
     const r = await getResearch(Number(params.id));
     if (user.role !== 'admin' && r.supervisor_id !== user.id) fail(403, 'Not your research');
-    return (await db.prepare(`SELECT a.id,a.action,a.stage_id,a.detail,a.created_at,u.name AS actor FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id
-      WHERE a.research_id=? ORDER BY a.id DESC LIMIT 500`).all(r.id)).map(x => ({ ...x, detail: x.detail ? JSON.parse(x.detail) : null }));
+    return (await db.prepare(`SELECT a.id,a.action,a.stage_id,a.detail,a.created_at,u.name AS actor,s.name AS stage FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id
+      LEFT JOIN stages s ON s.id=a.stage_id WHERE a.research_id=? ORDER BY a.id DESC LIMIT 500`).all(r.id)).map(x => ({ ...x, detail: x.detail ? JSON.parse(x.detail) : null }));
   },
   async stageHistory({ user, params }) {
     const s = await getStage(Number(params.id));
     if (user.role !== 'admin' && s.supervisor_id !== user.id) fail(403, 'Not your stage');
-    return (await db.prepare(`SELECT a.id,a.action,a.research_id,a.detail,a.created_at,u.name AS actor FROM audit_log a LEFT JOIN users u ON u.id=a.actor_id
+    return (await db.prepare(`SELECT a.id,a.action,a.research_id,a.detail,a.created_at,u.name AS actor,COALESCE(tm.name,su.name) AS who,r.title FROM audit_log a
+      LEFT JOIN users u ON u.id=a.actor_id LEFT JOIN research r ON r.id=a.research_id LEFT JOIN teams tm ON tm.id=r.team_id LEFT JOIN users su ON su.id=r.student_id
       WHERE a.stage_id=? ORDER BY a.id DESC LIMIT 500`).all(s.id)).map(x => ({ ...x, detail: x.detail ? JSON.parse(x.detail) : null }));
   },
 };

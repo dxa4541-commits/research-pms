@@ -1,7 +1,7 @@
 // Research projects: list with search/filters, details with tabs, topic registration, "my students".
 import { $, esc, t, tErr, badge, fmtDate, fmtDay, state, api, apiUpload, download, downloadPath, readFile, act, courseOpts, render, toast, notifText } from '../core.js';
-import { icon, avatar, th, sortRows, bindSort, num, progress, remBadge, remaining, pageHeader, tabsHtml, empty, setCrumbs, paginate, pagerHtml, bindPager, confirmDialog, dropzoneHtml, bindDropzone, fmtBytes, go } from '../ui.js';
-import { renderResearchStages, stateBadge, tlState } from './stages.js';
+import { icon, avatar, th, sortRows, bindSort, num, progress, remBadge, remaining, pageHeader, tabsHtml, empty, setCrumbs, paginate, pagerHtml, bindPager, confirmDialog, dropzoneHtml, bindDropzone, fmtBytes, go, canView, viewPath } from '../ui.js';
+import { renderResearchStages, stateBadge, tlState, auditItem } from './stages.js';
 
 const PER = 10;
 const isStudent = () => state.user.role === 'student', isSup = () => state.user.role === 'supervisor';
@@ -128,13 +128,14 @@ function topic(pane, { r, role, id }) {
       <div class="row" style="margin-top:10px"><button class="ok" data-d="approve">${icon('check')} ${t('approve')}</button><button class="warn" data-d="request_changes">${icon('edit')} ${t('requestChanges')}</button><button class="bad" data-d="reject">${icon('x')} ${t('reject')}</button></div><p class="hint">${t('rejectHint')}</p></section>` : ''}
     <section class="card"><div class="card-h"><h3>${t('versionsFeedback')}</h3></div>
       ${r.submissions.length ? r.submissions.map(s => `<div class="ver"><div class="row"><b class="grow">${t('version')} ${s.version_no}</b><span class="small mute">${fmtDate(s.created_at)}</span>
-          <button class="ghost sm" data-dl="${s.id}" data-name="${esc(s.filename)}">${icon('download')} <span dir="ltr">${esc(s.filename)}</span> · ${fmtBytes(s.size)}</button></div>
+          ${canView(s.filename) ? `<button class="ghost sm" data-view="/api/submissions/${s.id}/file" data-name="${esc(s.filename)}">${icon('eye')} ${t('vw.view')}</button>` : ''}<button class="ghost sm" data-dl="${s.id}" data-name="${esc(s.filename)}">${icon('download')} <span dir="ltr">${esc(s.filename)}</span> · ${fmtBytes(s.size)}</button></div>
           ${s.notes.map(n => `<div class="note"><span class="small mute">${esc(n.author)} · ${fmtDate(n.created_at)}</span><p>${esc(n.text)}</p></div>`).join('')}
           ${isSup() ? `<div class="row" style="margin-top:8px"><input class="grow" placeholder="${t('addNotePh')}" data-note="${s.id}" aria-label="${t('addNotePh')}"><button class="ghost sm" data-addnote="${s.id}">${t('addNote')}</button></div>` : ''}</div>`).join('')
         : `<p class="mute">${t('rd.noVersions')}</p>`}
       ${mayUpload ? `<h4 style="margin-top:14px">${t('uploadNew')}</h4>${dropzoneHtml('v', { formats: ['pdf', 'doc', 'docx'], maxMb: 10 })}<p style="margin-top:10px"><button id="up" disabled>${icon('upload')} ${t('upload')}</button></p>` : ''}</section>
     </div><div class="stack"><section class="card"><h3>${t('rd.feedback')}</h3>${r.topic_reviews?.length ? r.topic_reviews.map(v => `<div class="note"><span class="small mute">${esc(v.reviewer)} · ${fmtDate(v.created_at)} · ${t('st.' + v.decision)}</span>${v.comment ? `<p>${esc(v.comment)}</p>` : ''}</div>`).join('') : `<p class="mute small">${t('rd.noFeedback')}</p>`}</section></div></div>`;
   pane.querySelectorAll('[data-dl]').forEach(b => b.onclick = () => download(b.dataset.dl, b.dataset.name));
+  pane.querySelectorAll('[data-view]').forEach(b => b.onclick = () => viewPath(b.dataset.view, b.dataset.name));
   pane.querySelectorAll('[data-d]').forEach(b => b.onclick = act(async () => {
     const d = b.dataset.d, comment = $('#cm').value.trim();
     if (d !== 'approve' && !comment) { $('#cm').focus(); throw new Error(t('rejectHint')); }
@@ -252,10 +253,10 @@ async function activity(pane, { r, stagesData, id, role }) {
     }
   } else {
     const h = await api('GET', `/research/${id}/history`);
-    items = h.map(x => ({ at: x.created_at, who: x.actor, text: x.action, ic: 'clock', detail: x.detail }));
+    items = h.map(auditItem);
   }
   items.sort((a, b) => b.at.localeCompare(a.at));
-  pane.innerHTML = `<section class="card"><div class="card-h"><h3>${t('rd.activity')}</h3></div>${items.length ? items.map(i => `<div class="todo"><span class="ic">${icon(i.ic)}</span><div class="t"><b>${i.detail !== undefined ? `<code>${esc(i.text)}</code>` : esc(i.text)}</b><span class="tiny mute">${esc(i.who ?? '—')} · ${fmtDate(i.at)}</span>${i.detail ? `<span class="tiny mute" dir="ltr">${esc(JSON.stringify(i.detail)).slice(0, 160)}</span>` : ''}</div></div>`).join('') : empty({ ic: 'clock', title: t('noHistory') })}</section>`;
+  pane.innerHTML = `<section class="card"><div class="card-h"><h3>${t('rd.activity')}</h3></div>${items.length ? items.map(i => `<div class="todo"><span class="ic">${icon(i.ic)}</span><div class="t"><b>${esc(i.text)}</b>${i.sub ? `<span class="small">${esc(i.sub)}</span>` : ''}<span class="tiny mute">${esc(i.who ?? '—')} · ${fmtDate(i.at)}</span></div></div>`).join('') : empty({ ic: 'clock', title: t('noHistory') })}</section>`;
 }
 
 // ---------- Proposal status tracker (student dashboard and the topic tab) ----------

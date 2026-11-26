@@ -1,5 +1,5 @@
 // Reusable UI components for the redesigned interface (no dependencies).
-import { esc, t, state, toast, render } from './core.js';
+import { esc, t, tErr, state, toast, render } from './core.js';
 
 // ---------- Icons (24×24 stroke icons, Feather-style paths) ----------
 const P = {
@@ -293,3 +293,34 @@ export function enhanceForms(root) {
 let ddSeq = 0;
 export const rowMenu = items => { const id = `rm${++ddSeq}`; return `<div class="dd"><button class="ghost icon kebab" data-dd="${id}" aria-label="${t('actions')}" data-tip="${t('actions')}">${icon('more')}</button>
   <div class="dd-menu" id="${id}" hidden>${items.map(x => `<button ${x.attrs} class="${x.danger ? 'danger' : ''}">${icon(x.ic)} ${esc(x.label)}</button>`).join('')}</div></div>`; };
+
+// ---------- File viewer: a panel beside the page (PDF, images, text), so a submission can be read next to the review form ----------
+const VIEWABLE = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', txt: 'text/plain;charset=utf-8' };
+export const canView = name => String(name).split('.').pop().toLowerCase() in VIEWABLE;
+let viewerUrl = null, collapsedByViewer = false;
+export function closeViewer() {
+  document.querySelector('.viewer')?.remove(); document.body.classList.remove('viewer-open');
+  if (collapsedByViewer) { document.querySelector('#shell')?.classList.remove('collapsed'); collapsedByViewer = false; }
+  if (viewerUrl) { URL.revokeObjectURL(viewerUrl); viewerUrl = null; }
+}
+export async function viewPath(path, name) {
+  const ext = String(name).split('.').pop().toLowerCase();
+  const res = await fetch(path, { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } });
+  if (!res.ok) { let m = 'Request failed'; try { m = (await res.json()).error; } catch { /* not JSON */ } return toast(tErr(m), true); }
+  closeViewer();
+  viewerUrl = URL.createObjectURL(new Blob([await res.arrayBuffer()], { type: VIEWABLE[ext] ?? 'application/octet-stream' }));
+  const panel = document.createElement('aside');
+  panel.className = 'viewer'; panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-label', name);
+  panel.innerHTML = `<div class="viewer-h"><b class="grow" dir="ltr">${esc(name)}</b>
+      <a class="btn ghost sm" href="${viewerUrl}" download="${esc(name)}" aria-label="${t('vw.download')}" data-tip="${t('vw.download')}">${icon('download')}<span class="vl">${t('vw.download')}</span></a>
+      <a class="btn ghost sm" href="${viewerUrl}" target="_blank" rel="noopener" aria-label="${t('vw.newTab')}" data-tip="${t('vw.newTab')}">${icon('eye')}</a>
+      <button class="ghost sm icon" data-vclose aria-label="${t('vw.close')}" data-tip="${t('vw.close')}">${icon('x')}</button></div>
+    ${ext.startsWith('jp') || ext === 'png' ? `<div class="viewer-b img"><img src="${viewerUrl}" alt="${esc(name)}"></div>` : `<iframe class="viewer-b" src="${viewerUrl}" title="${esc(name)}"></iframe>`}`;
+  document.body.appendChild(panel); document.body.classList.add('viewer-open');
+  // give the page beside the viewer as much room as possible: fold the sidebar to icons while the viewer is open
+  const shell = document.querySelector('#shell');
+  if (shell && !shell.classList.contains('collapsed')) { shell.classList.add('collapsed'); collapsedByViewer = true; }
+  panel.querySelector('[data-vclose]').onclick = closeViewer;
+  panel.addEventListener('keydown', e => { if (e.key === 'Escape') closeViewer(); });
+  panel.querySelector('[data-vclose]').focus();
+}

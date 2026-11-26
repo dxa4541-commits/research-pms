@@ -134,7 +134,8 @@ const clientIp = req => process.env.TRUST_PROXY === '1'
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.woff2': 'font/woff2', '.svg': 'image/svg+xml' };
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer',
-  'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+  // blob: frames/images: submitted PDFs and pictures are shown in the in-page viewer from a local copy (never another site)
+  'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; frame-src blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
 };
 const HSTS = process.env.NODE_ENV === 'production' ? { 'Strict-Transport-Security': 'max-age=31536000' } : {};
 const send = (res, status, body, headers = {}) => {
