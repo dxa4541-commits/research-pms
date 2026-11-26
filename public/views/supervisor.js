@@ -1,7 +1,7 @@
 // Supervisor views: dashboard, submissions & reviews queue, stage management, grades overview and reports.
 import { $, esc, t, badge, toast, fmtDate, fmtDay, state, api, downloadPath, act, courseOpts, render, notifText } from '../core.js';
 import { icon, avatar, statCard, th, sortRows, bindSort, dateField, bindDateFields, num, progress, remBadge, pageHeader, empty, setCrumbs, confirmDialog, tabsHtml, paginate, pagerHtml, bindPager, go, modal } from '../ui.js';
-import { renderResearchStages, stateBadge } from './stages.js';
+import { renderResearchStages, stateBadge, auditItem } from './stages.js';
 import { notifMeta } from './notifications.js';
 
 const FORMATS = ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'zip', 'png', 'jpg', 'jpeg', 'txt'];
@@ -89,7 +89,7 @@ export async function renderStages(view) {
         <div class="tl-meta"><span>${icon('book')} ${esc(s.course)}</span><span>${icon('flag')} ${s.deadline ? fmtDay(s.deadline) : '—'}</span>${s.deadline ? remBadge(s.deadline) : ''}<span>${icon('award')} ${num(s.max_grade)}</span>${s.criteria.length ? `<span>${icon('check')} ${t('rubric')}: ${s.criteria.length}</span>` : ''}</div>
         <div class="row small" style="gap:14px"><span>${t('assigned2')}: <b>${c.assigned}</b></span><span>${t('awaitingC')}: <b>${c.pending_review}</b></span><span>${t('approvedC2')}: <b>${c.approved}</b></span><span>${t('changesC')}: <b>${c.changes_requested}</b></span><span>${t('missingC')}: <b>${c.missing}</b></span><span class="${c.late ? 'overdue' : ''}">${t('lateC')}: <b>${c.late}</b></span>${c.locked ? `<span class="mute">${icon('lock')} ${t('sf.lockedC')}: <b>${c.locked}</b></span>` : ''}</div>
         <div style="max-width:320px;margin-top:8px">${progress(c.assigned ? c.approved / c.assigned * 100 : 0)}</div></div>
-      <div class="row"><button class="ghost sm icon" data-up="${s.id}" ${i === 0 ? 'disabled' : ''} aria-label="${t('moveUp')}" data-tip="${t('moveUp')}">↑</button><button class="ghost sm icon" data-down="${s.id}" ${i === stages.length - 1 ? 'disabled' : ''} aria-label="${t('moveDown')}" data-tip="${t('moveDown')}">↓</button>
+      <div class="row" style="flex:1 1 auto;min-width:0;justify-content:flex-end"><button class="ghost sm icon" data-up="${s.id}" ${i === 0 ? 'disabled' : ''} aria-label="${t('moveUp')}" data-tip="${t('moveUp')}">↑</button><button class="ghost sm icon" data-down="${s.id}" ${i === stages.length - 1 ? 'disabled' : ''} aria-label="${t('moveDown')}" data-tip="${t('moveDown')}">↓</button>
         <button class="ghost sm" data-open="${s.id}">${t('stageTargets')} ${icon('right')}</button><button class="ghost sm" data-edit="${s.id}">${icon('edit')} ${t('edit')}</button>${s.deletable ? `<button class="bad sm" data-del="${s.id}">${icon('trash')} ${t('del')}</button>` : ''}</div></div></section>`; }).join('')
       : `<div class="card">${empty({ ic: 'layers', title: t('noStages'), text: t('tl.noStagesD'), action: `<button id="new2">${icon('plus')} ${t('newStage')}</button>` })}</div>`}`;
   ['new', 'new2'].forEach(id => $('#' + id)?.addEventListener('click', () => { state.stageForm = { id: null }; render(); }));
@@ -214,7 +214,7 @@ async function renderStageDetail(view, id) {
   $('#ed')?.addEventListener('click', () => { state.openStageId = null; state.stageForm = { id }; render(); });
   $('#hs').onclick = act(async () => {
     const h = await api('GET', `/stages/${id}/history`); $('#histbox').hidden = false;
-    $('#hist').innerHTML = h.length ? `<div class="table-wrap"><table><tbody>${h.map(x => `<tr><td class="small mute">${fmtDate(x.created_at)}</td><td>${esc(x.actor ?? '—')}</td><td><code>${esc(x.action)}</code></td><td class="small mute">${esc(x.detail ? JSON.stringify(x.detail) : '')}</td></tr>`).join('')}</tbody></table></div>` : `<span class="mute">${t('noHistory')}</span>`;
+    $('#hist').innerHTML = h.length ? h.map(auditItem).map(i => `<div class="todo"><span class="ic">${icon(i.ic)}</span><div class="t"><b>${esc(i.text)}</b>${i.sub ? `<span class="small">${esc(i.sub)}</span>` : ''}<span class="tiny mute">${esc(i.who ?? '—')} · ${fmtDate(i.at)}</span></div></div>`).join('') : `<span class="mute">${t('noHistory')}</span>`;
   });
   view.querySelectorAll('[data-exp]').forEach(b => b.onclick = () => { const rid = Number(b.dataset.exp); state.expanded.has(rid) ? state.expanded.delete(rid) : state.expanded.add(rid); render(); });
   for (const rid of state.expanded) { const box = view.querySelector(`[data-box="${rid}"]`); if (box) renderResearchStages(box, rid, { role: 'supervisor', onlyStageId: id, after: render }); }

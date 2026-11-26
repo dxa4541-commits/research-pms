@@ -1,7 +1,7 @@
 // Research stages as a timeline: status, deadlines, submission history, grading and review (supervisor), submitting (student).
 // Shared by the research details page, the student's stages page and the supervisor's stage page.
 import { esc, t, tErr, badge, fmtDate, fmtDay, api, apiUpload, downloadPath, readFile, act, state, toast } from '../core.js';
-import { icon, num, progress, remBadge, remaining, confirmDialog, dropzoneHtml, bindDropzone, empty, fmtBytes, avatar } from '../ui.js';
+import { icon, num, progress, remBadge, remaining, confirmDialog, dropzoneHtml, bindDropzone, empty, fmtBytes, avatar, canView, viewPath } from '../ui.js';
 
 export const stateBadge = s => `<span class="badge ${s}">${t('state.' + s)}</span>`;
 const lateBadge = () => `<span class="badge overdue">${icon('alert')}${t('late')}</span>`;
@@ -24,7 +24,7 @@ const openKey = (rid, sid) => `${rid}:${sid}`;
 state.stOpen ??= new Set();
 
 // a file of a submission: files stored per submission have their own id; older single-file submissions use the submission's
-const fileBtn = (sub, f) => `<button class="ghost sm" ${f.id ? `data-sfdl="${f.id}"` : `data-sdl="${sub.id}"`} data-name="${esc(f.filename)}">${icon('download')} <span dir="ltr">${esc(f.filename)}</span> · ${fmtBytes(f.size)}</button>`;
+const fileBtn = (sub, f) => `<span class="filechip">${canView(f.filename) ? `<button class="ghost sm" data-view="${f.id ? `/api/stage-submission-files/${f.id}/file` : `/api/stage-submissions/${sub.id}/file`}" data-name="${esc(f.filename)}">${icon('eye')} ${t('vw.view')}</button>` : ''}<button class="ghost sm" ${f.id ? `data-sfdl="${f.id}"` : `data-sdl="${sub.id}"`} data-name="${esc(f.filename)}">${icon('download')} <span dir="ltr">${esc(f.filename)}</span> · ${fmtBytes(f.size)}</button></span>`;
 function submissionHtml(sub, role) {
   const files = sub.files ?? [{ id: null, filename: sub.filename, size: sub.size }];
   return `<div class="ver ${sub.replaced ? 'is-replaced' : ''}"><div class="row"><b class="grow">${t('attempt')} ${sub.attempt_no}</b>${sub.late ? lateBadge() : ''}${sub.replaced ? `<span class="badge closed">${t('sb.replaced')}</span>` : badge(sub.status)}</div>
@@ -124,6 +124,7 @@ export async function renderResearchStages(el, researchId, { role, onlyStageId =
   });
   el.querySelectorAll('[data-sdl]').forEach(b => b.onclick = () => downloadPath(`/api/stage-submissions/${b.dataset.sdl}/file`, b.dataset.name));
   el.querySelectorAll('[data-sfdl]').forEach(b => b.onclick = () => downloadPath(`/api/stage-submission-files/${b.dataset.sfdl}/file`, b.dataset.name));
+  el.querySelectorAll('[data-view]').forEach(b => b.onclick = () => viewPath(b.dataset.view, b.dataset.name));
   list.forEach((e, i) => {
     const b = el.querySelector(`[data-stage="${e.stage.id}"]`); if (!b || !isOpen(e, i)) return;
     const latest = e.submissions[0];
@@ -195,4 +196,23 @@ function bindSubmitBox(b, e, researchId, sb, refresh) {
     } finally { if (sb.isConnected) sb.disabled = !files.length; }
   });
   paint();
+}
+
+// Activity history: one readable line per audit entry (action in words + the details that matter).
+const AU_ICON = { topic: 'edit', stage: 'layers', workflow: 'activity', final: 'award', message: 'message', team: 'users' };
+export function auditItem(x) {
+  const d = x.detail ?? {}, bits = [];
+  if (x.stage) bits.push(x.stage);
+  if (x.who) bits.push(x.who + (x.title ? ` — ${x.title}` : ''));
+  if (d.attempt) bits.push(t('attempt') + ' ' + d.attempt);
+  if (d.from != null || d.to != null) bits.push(`${t('grade')}: ${d.from ?? '—'} → ${d.to ?? '—'}`);
+  else if (d.score != null) bits.push(`${t('grade')}: ${d.score}`);
+  if (Array.isArray(d.files) && d.files.length) bits.push(d.files.join('، '));
+  else if (d.file) bits.push(d.file);
+  if (d.deadline) bits.push(`${t('deadlineShort')}: ${d.deadline}`);
+  if (d.late) bits.push(t('late'));
+  if (d.name && !x.stage) bits.push(d.name);
+  if (d.comment) bits.push(`«${String(d.comment).slice(0, 140)}»`);
+  const key = 'au.' + x.action, label = t(key);
+  return { at: x.created_at, who: x.actor, ic: AU_ICON[x.action.split('.')[0]] ?? 'clock', text: label === key ? x.action : label, sub: bits.join(' · ') };
 }
