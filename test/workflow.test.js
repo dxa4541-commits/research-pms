@@ -177,5 +177,35 @@ assert.equal(r.body.workflow.started, false);
 const soloStages = (await call('GET', `/research/${sid}/stages`, null, solo)).body.stages;
 assert.deepEqual(soloStages.map(e => e.stage.name), ['Presentation']); assert.equal(soloStages[0].phase, 'active'); ok('only "assign to all" stages are attached, as before');
 
+// ---------- Starting the workflow for research approved earlier ----------
+st = (await call('GET', '/supervisor/settings', null, doc)).body;
+assert.deepEqual(st.not_started.map(x => x.id), [sid]); ok('research approved without the workflow is listed as not started');
+const pres = soloStages[0].stage.id;
+await is(call('PUT', `/stages/${pres}/state`, { state: 'open' }, doc), 200, 'instructor opens the hand-assigned stage');
+await is(call('POST', `/stages/${pres}/submissions`, { researchId: sid, filename: 'p.pdf', data: pdf }, solo), 200, 'student works on a hand-assigned stage');
+const presSub = (await call('GET', `/stages/${pres}`, null, doc)).body.targets.find(x => x.research_id === sid).submission_id;
+await is(call('POST', `/stage-submissions/${presSub}/review`, { decision: 'approve' }, doc), 200, 'instructor approves it');
+await is(call('POST', `/research/${sid}/workflow/start`, null, solo), 403, 'students cannot start the workflow');
+r = await is(call('POST', `/research/${sid}/workflow/start`, null, doc), 200, 'instructor starts the workflow of the earlier research');
+assert.equal(r.body.first, 'Requirements'); ok('the first unfinished stage is activated');
+let ws = (await call('GET', `/research/${sid}/stages`, null, solo)).body.stages;
+assert.equal(ws.find(e => e.stage.id === pres).phase, 'completed'); assert.equal(ws.find(e => e.stage.id === pres).status, 'approved'); ok('work already approved is kept as completed');
+assert.equal(ws.filter(e => e.phase === 'active').length, 1); assert.ok(ws.filter(e => e.phase === 'locked').length >= 2); ok('the other stages wait in order');
+assert.ok((await keys(solo)).includes('n.stage.activated')); ok('student notified of the active stage');
+await is(call('POST', `/research/${sid}/workflow/start`, null, doc), 409, 'starting twice is refused');
+assert.equal((await call('POST', '/supervisor/workflow/start-all', null, doc)).body.started, 0); ok('nothing left to start');
+
+// ---------- Editing a stage after it started ----------
+const d2 = (await call('GET', '/stages', null, doc)).body.find(s => s.id === s2);
+assert.equal(d2.started, true);
+r = await is(call('PUT', `/stages/${s2}`, { ...d2, name: 'Design v2', instructions: 'Use UML', maxGrade: 999, formats: ['txt'], maxFiles: 5, deadline: day(70) }, doc), 200, 'instructor edits a started stage');
+assert.equal(r.body.started, true);
+const e2 = (await call('GET', '/stages', null, doc)).body.find(s => s.id === s2);
+assert.equal(e2.name, 'Design v2'); assert.equal(e2.instructions, 'Use UML'); assert.equal(e2.deadline, day(70)); ok('name, instructions and deadline changed');
+assert.equal(e2.max_grade, 50); assert.deepEqual(e2.formats, d2.formats); assert.equal(e2.max_files, d2.max_files); ok('maximum grade and file rules unchanged');
+assert.ok((await keys(mate)).includes('n.stage.deadline')); ok('team notified of the new deadline');
+await is(call('PUT', `/stages/${s2}`, { ...d2, deadline: day(1), startDate: day(5) }, doc), 200, 'start date is kept even if sent');
+assert.equal((await call('GET', '/stages', null, doc)).body.find(s => s.id === s2).start_date, d2.start_date); ok('start date unchanged (use postpone)');
+
 console.log(`\nAll ${n} workflow checks passed`);
 server.close(); process.exit(0);

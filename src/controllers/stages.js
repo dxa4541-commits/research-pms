@@ -11,7 +11,8 @@ import {
   today, STATE_LIST, getStage, ownStage, criteriaOf, stageStarted, publicStage, targets, decorate, submitProblem, attemptsLeft,
   assign, stageTotals, formatsOf, replaceProblem, openFor,
 } from '../stages.js';
-import { activateNext, finishTarget, settingsFor, saveSettings } from '../workflow.js';
+import { activateNext, finishTarget, settingsFor, saveSettings, startWorkflow, notStarted } from '../workflow.js';
+import { own } from '../research.js';
 
 const isDate = d => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d));
 const optDate = (v, label) => v == null || v === '' ? null : isDate(v) ? v : fail(400, `${label} must be a date (YYYY-MM-DD)`);
@@ -104,19 +105,27 @@ export const stageHandlers = {
     await audit(user, 'stage.created', { stageId: id, detail: { name: p.name, targets: added.length } });
     return { id, assigned: added.length };
   },
+  // Before a stage starts everything can be edited. Once students can work on it, what decides how work is judged
+  // or accepted stays as it is (maximum grade, rubric, file formats and limits, start date — use postpone for
+  // dates); name, description, instructions, deadline and the resubmission/late rules can still change, and every
+  // research on the stage is told. A new deadline applies to research without a deadline of its own (duration).
   async updateStage({ user, params, body }) {
     const s = await ownStage(user, Number(params.id));
-    if (await stageStarted(s)) fail(409, 'This stage has already started and can no longer be edited (you can postpone it or change its state)');
-    const p = parseStage(body);
+    const started = await stageStarted(s);
+    const kept = started ? { startDate: s.start_date, maxGrade: s.max_grade, formats: formatsOf(s), maxFileMb: s.max_file_mb, maxFiles: s.max_files, criteria: null } : {};
+    const p = parseStage({ ...body, ...kept });
     await db.prepare(`UPDATE stages SET name=?,description=?,instructions=?,start_date=?,deadline=?,max_grade=?,allowed_formats=?,max_file_mb=?,
         allow_resubmit=?,max_attempts=?,assign_all=?,allow_late=?,duration_days=?,max_files=?,allow_replace=? WHERE id=?`).run(p.name, p.description, p.instructions, p.start, p.deadline, p.maxGrade,
         p.formats.join(','), p.maxMb, p.allowResubmit ? 1 : 0, p.maxAttempts, body.assignAll ? 1 : 0, p.allowLate ? 1 : 0, p.durationDays, p.maxFiles, p.allowReplace ? 1 : 0, s.id);
-    await saveCriteria(s.id, p.criteria);
+    if (!started) await saveCriteria(s.id, p.criteria);
     const stage = await getStage(s.id);
     if (body.assignAll) await attach(stage, { assignAll: true });
-    await notifyTargets(s.id, 'n.stage.updated', { stage: p.name });
-    await audit(user, 'stage.updated', { stageId: s.id, detail: { name: p.name } });
-    return { ok: true };
+    if (p.deadline !== s.deadline) await notifyTargets(s.id, 'n.stage.deadline', { stage: p.name, state: s.state, date: p.deadline ?? '—' });
+    else await notifyTargets(s.id, 'n.stage.updated', { stage: p.name });
+    const changed = ['name', 'description', 'instructions', 'deadline', 'allow_resubmit', 'max_attempts', 'allow_late', 'allow_replace', 'duration_days']
+      .filter(k => String(s[k] ?? '') !== String(stage[k] ?? ''));
+    await audit(user, 'stage.updated', { stageId: s.id, detail: { name: p.name, started, changed, prevDeadline: s.deadline } });
+    return { ok: true, started, kept: started ? ['max_grade', 'criteria', 'formats', 'max_file_mb', 'max_files', 'start_date'] : [] };
   },
   // A stage can be deleted as long as nobody has submitted work or received a grade for it, even when it is open.
   // Research for which it was the active stage moves on to its next stage.
@@ -377,7 +386,19 @@ export const stageHandlers = {
   },
 
   // ---------- Supervisor: workflow settings ----------
-  getWorkflowSettings: ({ user }) => settingsFor(user.id),
+  getWorkflowSettings: async ({ user }) => ({ ...await settingsFor(user.id), not_started: await notStarted(user.id) }),
+  // "Start workflow" for research approved before the automatic workflow (one research, or all of them at once).
+  async startResearchWorkflow({ user, params }) {
+    const r = own(await accessible(user, Number(params.id)), user);
+    if (r.status !== 'approved') fail(409, 'Only approved research can start the stage workflow');
+    if (r.workflow_started_at) fail(409, 'The stage workflow of this research has already started');
+    return startWorkflow(r, user, { manual: true });
+  },
+  async startAllWorkflows({ user }) {
+    const list = await notStarted(user.id);
+    for (const x of list) await startWorkflow(x, user, { manual: true });
+    return { started: list.length };
+  },
   updateWorkflowSettings: ({ user, body }) => saveSettings(user, body),
 };
 

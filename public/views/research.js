@@ -87,7 +87,9 @@ function overview(pane, { r, stagesData, teamInfo, role, done, total }) {
   const cur = stagesData.stages.find(e => !['done', 'closed'].includes(tlState(e)));
   const pct = total ? done / total * 100 : 0;
   const dec = isSup() && r.status === 'pending';
+  const notStarted = isSup() && r.status === 'approved' && !r.workflow_started_at;
   pane.innerHTML = `${dec ? `<div class="alert warn" style="margin-bottom:16px">${icon('alert')}<p><b>${t('rd.decisionNeeded')}</b> <button class="link" data-gotab="topic">${t('rd.goTopic')}</button></p></div>` : ''}
+    ${notStarted ? `<div class="alert warn" style="margin-bottom:16px">${icon('layers')}<p class="grow"><b>${t('wf.oneT')}</b><br><span class="small">${t('wf.oneD')}</span></p><button class="ok" id="wfStart">${icon('check')} ${t('wf.start')}</button></div>` : ''}
     ${r.status === 'changes_requested' && isStudent() ? `<div class="alert warn" style="margin-bottom:16px">${icon('edit')}<p><b>${t('changesBanner')}</b> <button class="link" data-gotab="topic">${t('rd.goTopic')}</button></p></div>` : ''}
     <div class="grid g-main"><div class="stack">
       <section class="card"><div class="card-h"><h3>${t('rd.progress')}</h3><span class="small mute">${done}/${total}</span></div>${progress(pct, { lg: true })}
@@ -104,6 +106,10 @@ function overview(pane, { r, stagesData, teamInfo, role, done, total }) {
       ${r.deadline ? `<section class="card"><h3>${t('deadline')}</h3><p>${fmtDay(r.deadline)} ${remBadge(r.deadline)}</p></section>` : ''}
     </div></div>`;
   pane.querySelectorAll('[data-gotab]').forEach(b => b.onclick = () => { state.researchTab = b.dataset.gotab; render(); });
+  pane.querySelector('#wfStart')?.addEventListener('click', act(async () => {
+    const res = await api('POST', `/research/${r.id}/workflow/start`);
+    toast(res.first ? t('toast.workflowStarted', { s: res.first }) : t('toast.noStagesYet')); render();
+  }));
 }
 
 function topic(pane, { r, role, id }) {

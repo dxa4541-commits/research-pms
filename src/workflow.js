@@ -41,22 +41,35 @@ async function attachAssignAll(research) {
   }
 }
 
-// Called when a proposal is approved. Idempotent: approving an already running research changes nothing.
-export async function startWorkflow(research, actor) {
+// Called when a proposal is approved (manual=false: only when the instructor's automatic start is on), or by the
+// instructor's "Start workflow" for research approved earlier (manual=true). Idempotent once started.
+// Research approved earlier may already have stages assigned by hand: their work is kept — a stage whose latest
+// submission was approved is completed, a stage with work in progress stays active, untouched stages are queued.
+export async function startWorkflow(research, actor, { manual = false } = {}) {
   const r = await db.prepare('SELECT * FROM research WHERE id=?').get(research.id);
   if (r.workflow_started_at) return { started: false };
-  const settings = await settingsFor(r.supervisor_id);
-  if (!settings.auto_first_stage) { await attachAssignAll(r); return { started: false }; }
+  if (!manual && !(await settingsFor(r.supervisor_id)).auto_first_stage) { await attachAssignAll(r); return { started: false }; }
   await db.prepare('UPDATE research SET workflow_started_at=utc_now() WHERE id=?').run(r.id);
   r.workflow_started_at = 'now';
+  const latest = `(SELECT status FROM stage_submissions x WHERE x.stage_id=stage_targets.stage_id AND x.research_id=stage_targets.research_id AND x.replaced=0 ORDER BY attempt_no DESC LIMIT 1)`;
+  await db.prepare(`UPDATE stage_targets SET phase='completed', completed_at=utc_now() WHERE research_id=? AND phase='active'
+    AND (${latest}='approved' OR (${latest} IS NULL AND EXISTS (SELECT 1 FROM stage_grades g WHERE g.stage_id=stage_targets.stage_id AND g.research_id=stage_targets.research_id)))`).run(r.id);
+  await db.prepare(`UPDATE stage_targets SET phase='locked' WHERE research_id=? AND phase='active' AND ${latest} IS NULL`).run(r.id);
   const stages = await db.prepare('SELECT * FROM stages WHERE supervisor_id=? AND course_id=? ORDER BY position, id').all(r.supervisor_id, r.course_id);
-  // stages that were assigned by hand before approval cannot exist (only approved research is assignable), so all start queued
   for (const s of stages) await db.prepare("INSERT INTO stage_targets (stage_id,research_id,phase) VALUES (?,?,'locked') ON CONFLICT DO NOTHING").run(s.id, r.id);
-  await audit(actor, 'workflow.started', { researchId: r.id, detail: { stages: stages.length } });
+  await audit(actor, 'workflow.started', { researchId: r.id, detail: { stages: stages.length, manual } });
   if (!stages.length) { await notify(r.supervisor_id, 'n.workflow.noStages', { title: r.title }, r.id); return { started: true, first: null }; }
   const first = await activateNext(r, actor);
-  return { started: true, first: first?.name ?? null };
+  const current = first ?? await db.prepare(`SELECT s.name FROM stage_targets t JOIN stages s ON s.id=t.stage_id WHERE t.research_id=? AND t.phase='active'
+    ORDER BY s.position, s.id LIMIT 1`).get(r.id);
+  return { started: true, first: current?.name ?? null };
 }
+
+// Approved research of an instructor whose workflow has not started (approved before the workflow existed,
+// or while the automatic start was switched off).
+export const notStarted = supervisorId => db.prepare(`SELECT r.id, r.title, COALESCE(t.name, u.name) AS label FROM research r
+  JOIN users u ON u.id=r.student_id LEFT JOIN teams t ON t.id=r.team_id
+  WHERE r.supervisor_id=? AND r.status='approved' AND r.workflow_started_at IS NULL ORDER BY r.id`).all(supervisorId);
 
 // Activates the next queued stage of the research (in stage order) unless one is already active.
 // With nothing left to do, the research workflow is complete.
