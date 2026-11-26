@@ -5,6 +5,7 @@ import { renderLogin, renderRegister, renderForcedPassword } from './views/auth.
 import { renderResearchList, renderDetail, renderSubmit, renderStudents } from './views/research.js';
 import { renderTeams, renderReports, renderUsers, renderCourses, renderRegistrations, renderApprovedIds, renderAdminDashboard } from './views/admin.js';
 import { renderDashboard, renderStages, renderSupervisorReports, renderReviewQueue, renderSupervisorGrades, renderProposals } from './views/supervisor.js';
+import { renderPresentations, renderStudentPresentation } from './views/presentations.js';
 import { renderStudentDashboard, renderTeamPage, renderTasks, renderStudentStages, renderStudentGrades } from './views/student.js';
 import { renderMessages } from './views/messages.js';
 import { renderNotifications, notifMeta } from './views/notifications.js';
@@ -13,9 +14,9 @@ import { openShare } from './views/share.js';
 
 // ---------- Navigation per role, grouped in sections: [section, [[key, icon, label], ...]] ----------
 const SECTIONS = {
-  student: [['overview', [['studentDash', 'dash', 'dashboard'], ['tasks', 'tasks', 'tasks']]], ['research', [['myResearch', 'book', 'myResearch'], ['stagesS', 'layers', 'stages'], ['grades', 'award', 'grades']]],
+  student: [['overview', [['studentDash', 'dash', 'dashboard'], ['tasks', 'tasks', 'tasks']]], ['research', [['myResearch', 'book', 'myResearch'], ['stagesS', 'layers', 'stages'], ['presentS', 'calendar', 'presentation'], ['grades', 'award', 'grades']]],
     ['collab', [['myTeam', 'users', 'team'], ['messages', 'message', 'messages']]], ['account', [['notifications', 'bell', 'notifications'], ['settings', 'settings', 'settings']]]],
-  supervisor: [['overview', [['dashboard', 'dash', 'dashboard']]], ['research', [['proposals', 'fileText', 'proposals'], ['research', 'book', 'research'], ['stages', 'layers', 'stages'], ['review', 'inbox', 'review'], ['grades', 'award', 'grades']]],
+  supervisor: [['overview', [['dashboard', 'dash', 'dashboard']]], ['research', [['proposals', 'fileText', 'proposals'], ['research', 'book', 'research'], ['stages', 'layers', 'stages'], ['review', 'inbox', 'review'], ['presentations', 'calendar', 'presentations'], ['grades', 'award', 'grades']]],
     ['people', [['students', 'user', 'students'], ['teams', 'users', 'teams'], ['messages', 'message', 'messages']]], ['insights', [['reports', 'chart', 'reports']]], ['account', [['notifications', 'bell', 'notifications'], ['settings', 'settings', 'settings']]]],
   admin: [['overview', [['adminDash', 'dash', 'dashboard']]], ['admission', [['registrations', 'userCheck', 'registrations'], ['ids', 'idcard', 'ids']]],
     ['management', [['users', 'users', 'users'], ['courses', 'book', 'courses'], ['research', 'fileText', 'research']]], ['insights', [['reports', 'chart', 'reports']]], ['account', [['notifications', 'bell', 'notifications'], ['settings', 'settings', 'settings']]]],
@@ -28,7 +29,7 @@ state.collapsed = lsGet('sbCollapsed') === '1';
 const views = {
   myResearch: renderResearchList, research: renderResearchList, topic: renderSubmit, students: renderStudents, teams: renderTeams, reports: v => state.user.role === 'admin' ? renderReports(v) : renderSupervisorReports(v),
   studentDash: renderStudentDashboard, myTeam: renderTeamPage, tasks: renderTasks, stagesS: renderStudentStages, grades: v => state.user.role === 'student' ? renderStudentGrades(v) : renderSupervisorGrades(v),
-  dashboard: renderDashboard, proposals: renderProposals, stages: renderStages, review: renderReviewQueue, messages: renderMessages, notifications: renderNotifications, settings: renderSettings,
+  dashboard: renderDashboard, proposals: renderProposals, presentations: renderPresentations, presentS: renderStudentPresentation, stages: renderStages, review: renderReviewQueue, messages: renderMessages, notifications: renderNotifications, settings: renderSettings,
   adminDash: renderAdminDashboard, registrations: renderRegistrations, ids: renderApprovedIds, users: renderUsers, courses: renderCourses,
 };
 let seq = 0;
