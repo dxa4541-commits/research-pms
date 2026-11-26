@@ -1,5 +1,5 @@
 // App shell: auth screens, sidebar, top bar, role-based routing.
-import { $, esc, t, fmtDate, state, api, act, setRender, notifText, lang, setLang, roleLabel, theme, setTheme } from './core.js';
+import { $, esc, t, fmtDate, state, api, act, setRender, notifText, lang, setLang, roleLabel, theme, setTheme, getToken, clearToken, adoptSession } from './core.js';
 import { icon, avatar, bindDropdowns, closeDropdowns, loading, errorBox, setCrumbs, enhanceTables, enhanceForms, closeViewer } from './ui.js';
 import { renderLogin, renderRegister, renderForcedPassword } from './views/auth.js';
 import { renderResearchList, renderDetail, renderSubmit, renderStudents } from './views/research.js';
@@ -75,7 +75,7 @@ function bindShell(u) {
   $('#share')?.addEventListener('click', openShare);
   $('#theme').onclick = () => { state.shellKey = null; setTheme(theme === 'dark' ? 'light' : 'dark'); };
   $('#logout').onclick = act(async () => {
-    await api('POST', '/logout'); localStorage.removeItem('token');
+    await api('POST', '/logout'); clearToken();
     Object.assign(state, { user: null, screen: null, tab: null, openId: null, openStageId: null, stageForm: null, thread: null, expanded: null, notifs: [], shellKey: null, researchTab: null }); render();
   });
   if (!window.__slash) { window.__slash = true; document.addEventListener('keydown', e => { if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) && $('#gq')) { e.preventDefault(); $('#gq').focus(); } }); }
@@ -108,8 +108,9 @@ async function render() {
   const sigNow = `${state.tab}|${state.openId}|${state.openStageId}|${state.researchTab}`;
   if (state.viewerSig && state.viewerSig !== sigNow) closeViewer();
   state.viewerSig = sigNow;
-  if (!state.user && localStorage.getItem('token')) {
-    try { state.user = await api('GET', '/me'); } catch { localStorage.removeItem('token'); }
+  if (!state.user) await adoptSession();
+  if (!state.user && getToken()) {
+    try { state.user = await api('GET', '/me'); } catch { clearToken(); }
   }
   if (mine !== seq) return;
   if (!state.user) { state.shellKey = null; return state.screen === 'register' ? renderRegister(app) : renderLogin(app); }

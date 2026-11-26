@@ -1,5 +1,5 @@
 // Public screens: log in, student registration, forced first-login password change.
-import { $, esc, t, state, api, act, lang, setLang, toast, render, roleLabel, theme, setTheme } from '../core.js';
+import { $, esc, t, state, api, act, lang, setLang, toast, render, roleLabel, theme, setTheme, setToken, clearToken } from '../core.js';
 import { icon, avatar, enhanceForms } from '../ui.js';
 
 const langBtn = () => `<button type="button" class="ghost sm" id="lang" aria-label="${t('language')}">${icon('globe')} ${lang === 'ar' ? 'English' : 'العربية'}</button>`;
@@ -28,7 +28,7 @@ export function renderLogin(app) {
   $('#f').onsubmit = act(async e => {
     e.preventDefault();
     const btn = e.submitter; if (btn) btn.disabled = true;
-    try { const r = await api('POST', '/login', { email: $('#e').value, password: $('#p').value }); localStorage.setItem('token', r.token); state.user = r.user; render(); }
+    try { const r = await api('POST', '/login', { email: $('#e').value, password: $('#p').value }); setToken(r.token); state.user = r.user; render(); }
     finally { if (btn) btn.disabled = false; }
   });
 }
@@ -58,7 +58,7 @@ export function renderForcedPassword(app, onDone) {
     <p><button type="submit" class="block">${t('changePw')}</button></p></form>
     <button class="ghost block" id="logout">${icon('logout')} ${t('logout')}</button></div>`);
   bindLang(); bindPw();
-  $('#logout').onclick = act(async () => { await api('POST', '/logout'); localStorage.removeItem('token'); state.user = null; state.shellKey = null; render(); });
+  $('#logout').onclick = act(async () => { await api('POST', '/logout'); clearToken(); state.user = null; state.shellKey = null; render(); });
   $('#f').onsubmit = act(async e => {
     e.preventDefault();
     if ($('#p1').value !== $('#p2').value) throw new Error(t('pwMismatch'));

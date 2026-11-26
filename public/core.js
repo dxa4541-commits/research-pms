@@ -47,6 +47,41 @@ export const fmtDay = d => new Date(d + 'T00:00:00').toLocaleDateString(lang ===
 export const dueBadge = r => r.overdue ? ` <span class="badge overdue">${t('overdue')}</span>` : '';
 export const dueText = r => r.deadline ? `${fmtDay(r.deadline)}${dueBadge(r)}` : '<span class="mute">—</span>';
 
+// ---------- sign-in, kept per browser tab ----------
+// The token lives in this tab's sessionStorage, so a student in one tab and an instructor in another stay separate
+// (signing in in one tab no longer switches the other). A tab opened later starts with the most recent sign-in
+// (localStorage) so it does not ask to log in again. '' in sessionStorage = signed out in this tab on purpose.
+const store = area => ({
+  get: k => { try { return area().getItem(k); } catch { return undefined; } },
+  set: (k, v) => { try { area().setItem(k, v); } catch { /* storage blocked */ } },
+  del: k => { try { area().removeItem(k); } catch { /* storage blocked */ } },
+});
+const tabStore = store(() => sessionStorage), lastStore = store(() => localStorage);
+let memToken = null;                                   // used when the browser blocks storage
+export function getToken() {
+  const t = tabStore.get('token');
+  if (t === undefined) return memToken ?? lastStore.get('token') ?? null;   // no sessionStorage: old behaviour
+  if (t === null) { const last = lastStore.get('token'); if (last) { tabStore.set('token', last); return last; } return null; }
+  return t || null;
+}
+// A tab without its own sign-in yet (just opened) takes over the most recent one as a session of its own.
+export async function adoptSession() {
+  if (tabStore.get('token') !== null) return;                       // has its own, signed out on purpose, or no storage
+  const last = lastStore.get('token');
+  if (!last) return;
+  try {
+    const res = await fetch('/api/session/fork', { method: 'POST', headers: { Authorization: 'Bearer ' + last } });
+    if (res.ok) tabStore.set('token', (await res.json()).token);
+    else if (res.status === 401) tabStore.set('token', '');         // the last sign-in has expired
+    else tabStore.set('token', last);
+  } catch { tabStore.set('token', last); }                           // offline: share it rather than log out
+}
+export function setToken(token) { memToken = token; tabStore.set('token', token); lastStore.set('token', token); }
+export function clearToken() {
+  const cur = getToken(); memToken = null; tabStore.set('token', '');
+  if (cur && lastStore.get('token') === cur) lastStore.del('token');
+}
+
 export const state = { user: null, tab: null, openId: null, openStageId: null, stageForm: null, thread: null, notifs: [], showNotifs: false };
 
 export function toast(msg, err) {
@@ -55,13 +90,13 @@ export function toast(msg, err) {
 }
 
 export async function api(method, path, body) {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   const res = await fetch('/api' + path, {
     method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401 && path !== '/login') { localStorage.removeItem('token'); state.user = null; render(); throw new Error(tErr('Please log in')); }
+  if (res.status === 401 && path !== '/login') { clearToken(); state.user = null; render(); throw new Error(tErr('Please log in')); }
   if (!res.ok) throw new Error(tErr(data.error || 'Request failed'));
   return data;
 }
@@ -70,18 +105,18 @@ export const download = (id, name) => downloadPath(`/api/submissions/${id}/file`
 export const apiUpload = (method, path, body, onProgress = () => {}) => new Promise((resolve, reject) => {
   const x = new XMLHttpRequest(); x.open(method, '/api' + path);
   x.setRequestHeader('Content-Type', 'application/json');
-  const token = localStorage.getItem('token'); if (token) x.setRequestHeader('Authorization', 'Bearer ' + token);
+  const token = getToken(); if (token) x.setRequestHeader('Authorization', 'Bearer ' + token);
   x.upload.onprogress = e => { if (e.lengthComputable) onProgress(e.loaded / e.total * 100); };
   x.onerror = () => reject(new Error(tErr('Network error')));
   x.onload = () => {
     let data = {}; try { data = JSON.parse(x.responseText); } catch { /* empty body */ }
-    if (x.status === 401) { localStorage.removeItem('token'); state.user = null; render(); return reject(new Error(tErr('Please log in'))); }
+    if (x.status === 401) { clearToken(); state.user = null; render(); return reject(new Error(tErr('Please log in'))); }
     x.status >= 200 && x.status < 300 ? resolve(data) : reject(new Error(tErr(data.error || 'Request failed')));
   };
   x.send(JSON.stringify(body));
 });
 export async function downloadPath(path, name) {
-  const res = await fetch(path, { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } });
+  const res = await fetch(path, { headers: { Authorization: 'Bearer ' + getToken() } });
   if (!res.ok) return toast(tErr((await res.json()).error), true);
   const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(await res.blob()), download: name });
   a.click(); URL.revokeObjectURL(a.href);
