@@ -87,6 +87,7 @@ const routes = [
   ['GET', '/api/stages', 'listStages', [V, A]],
   ['POST', '/api/stages', 'createStage', [V]],
   ['PUT', '/api/stages/reorder', 'reorderStages', [V]],
+  ['POST', '/api/stages/copy', 'copyStages', [V]],
   ['GET', '/api/stages/:id', 'getStageDetail', [V, A]],
   ['PUT', '/api/stages/:id', 'updateStage', [V]],
   ['DELETE', '/api/stages/:id', 'deleteStage', [V]],

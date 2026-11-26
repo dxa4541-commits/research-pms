@@ -216,13 +216,14 @@ function grades(pane, { r, stagesData, id }) {
     <div class="stack"><section class="card"><h3>${t('sdAccum')}</h3><div style="font-size:1.8rem;font-weight:700;color:var(--navy)">${num(tot.earned)}<span class="mute" style="font-size:1rem"> / ${num(tot.total_max)}</span></div>${tot.percent != null ? progress(tot.percent) : ''}${tot.percent != null ? `<p class="small mute">${tot.percent}%</p>` : ''}</section>
       <section class="card"><h3>${t('sdFinal')}</h3><div style="font-size:1.8rem;font-weight:700;color:var(--navy)">${r.grade != null ? r.grade : '—'}<span class="mute" style="font-size:1rem"> / 100</span></div>
         ${r.grade != null ? `<span class="badge ${r.grade_published ? 'published' : 'unpublished'}">${r.grade_published ? t('published') : t('unpublished')}</span>` : `<p class="small mute">${isStudent() ? t('gradePending') : t('notGradedYet')}</p>`}${r.grade_comment ? `<p class="small">${esc(r.grade_comment)}</p>` : ''}</section>
-      ${isSup() ? `<section class="card"><h3>${t('finalGrade')}</h3>${tot.stages ? `<p class="small mute">${t('calcTotal', { earned: tot.earned, max: tot.total_max, pct: tot.percent ?? 0 })}</p>` : ''}
-        <div class="row"><input type="number" min="0" max="100" step="0.5" placeholder="${t('score')}" style="width:110px" id="gs" value="${r.grade ?? ''}" aria-label="${t('score')}">${tot.percent != null ? `<button class="ghost" id="gcalc">${t('useCalc')}</button>` : ''}</div>
+      ${isSup() ? `<section class="card"><h3>${t('finalGrade')}</h3>${r.suggested_final ? `<div class="note"><span class="small"><b>${t('fg.suggested')}: ${num(r.suggested_final.score)} / 100</b></span>
+          <p class="small mute" style="margin:4px 0 0">${t('fg.m.' + r.suggested_final.method)} · ${t('fg.graded', { g: r.suggested_final.graded, n: r.suggested_final.stages })}${r.suggested_final.complete ? '' : ` · <span class="overdue">${t('fg.incomplete')}</span>`}</p></div>` : ''}
+        <div class="row"><input type="number" min="0" max="100" step="0.5" placeholder="${t('score')}" style="width:110px" id="fgs" value="${r.grade ?? ''}" aria-label="${t('score')}">${r.suggested_final ? `<button class="ghost" id="gcalc">${t('fg.use')}</button>` : ''}</div>
         <label for="gcm">${t('gradeComment')}</label><input id="gcm" value="${esc(r.grade_comment ?? '')}"><div class="row" style="margin-top:10px"><label class="inl small"><input type="checkbox" id="gpub" ${r.grade_published ? 'checked' : ''}> ${t('saveAndPublish')}</label><button id="gb">${t('gradeBtn')}</button>
         ${r.grade != null ? `<button class="ghost" id="gpb">${r.grade_published ? t('hideGrade') : t('publishGrade')}</button>` : ''}</div></section>` : ''}</div></div>`;
-  if ($('#gb')) $('#gb').onclick = act(async () => { await api('PUT', `/research/${id}/grade`, { score: $('#gs').value, comment: $('#gcm').value, publish: $('#gpub').checked }); render(); }, 'toast.grade');
+  if ($('#gb')) $('#gb').onclick = act(async () => { await api('PUT', `/research/${id}/grade`, { score: $('#fgs').value, comment: $('#gcm').value, publish: $('#gpub').checked }); render(); }, 'toast.grade');
   if ($('#gpb')) $('#gpb').onclick = act(async () => { await api('PUT', `/research/${id}/grade/publish`, { published: !r.grade_published }); render(); }, 'toast.grade');
-  if ($('#gcalc')) $('#gcalc').onclick = () => { $('#gs').value = Math.round(tot.percent * 10) / 10; };
+  if ($('#gcalc')) $('#gcalc').onclick = () => { $('#fgs').value = r.suggested_final.score; };
 }
 
 async function messagesTab(pane, { r }) {

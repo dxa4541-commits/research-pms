@@ -8,7 +8,7 @@ import { audit } from '../audit.js';
 import { addMessage, targetOf, notifyMessage, preview } from '../messages.js';
 import { isLeader, getTeam } from '../teams.js';
 import {
-  today, STATE_LIST, getStage, ownStage, criteriaOf, stageStarted, publicStage, targets, decorate, submitProblem, attemptsLeft,
+  today, addDays, STATE_LIST, getStage, ownStage, criteriaOf, stageStarted, publicStage, targets, decorate, submitProblem, attemptsLeft,
   assign, stageTotals, formatsOf, replaceProblem, openFor,
 } from '../stages.js';
 import { activateNext, finishTarget, settingsFor, saveSettings, startWorkflow, notStarted } from '../workflow.js';
@@ -53,12 +53,13 @@ function parseStage(body) {
   const durationDays = int(body.durationDays, 'Stage duration', 1, 365, null);
   const maxFiles = int(body.maxFiles, 'Number of files', 1, 10, 1);
   const allowReplace = body.allowReplace == null ? true : !!body.allowReplace;
+  const weight = body.weight == null || body.weight === '' ? null : num(body.weight, 'Stage weight', 0, 100);
   const maxGrade = criteria.length ? criteria.reduce((a, c) => a + c.max, 0)
     : (body.maxGrade == null || body.maxGrade === '' ? 100 : num(body.maxGrade, 'Maximum grade', 0.1, 1000));
   if (maxGrade > 1000) fail(400, 'Maximum grade must be between 0.1 and 1000');
   return {
     name, description: optText(body.description, 2000, 'Description'), instructions: optText(body.instructions, 4000, 'Instructions'),
-    start, deadline, formats, maxMb, allowResubmit, allowLate, maxAttempts, criteria, maxGrade, durationDays, maxFiles, allowReplace,
+    start, deadline, formats, maxMb, allowResubmit, allowLate, maxAttempts, criteria, maxGrade, durationDays, maxFiles, allowReplace, weight,
   };
 }
 const saveCriteria = async (stageId, criteria) => {
@@ -95,9 +96,9 @@ export const stageHandlers = {
     const state = body.state === 'open' ? 'open' : 'scheduled';
     const pos = (await db.prepare('SELECT COALESCE(MAX(position),0)+1 AS n FROM stages WHERE supervisor_id=?').get(user.id)).n;
     const r = await db.prepare(`INSERT INTO stages (supervisor_id,course_id,position,name,description,instructions,start_date,deadline,max_grade,
-        allowed_formats,max_file_mb,allow_resubmit,max_attempts,state,assign_all,allow_late,duration_days,max_files,allow_replace) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        allowed_formats,max_file_mb,allow_resubmit,max_attempts,state,assign_all,allow_late,duration_days,max_files,allow_replace,weight) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
         .run(user.id, course.id, pos, p.name, p.description, p.instructions, p.start, p.deadline, p.maxGrade, p.formats.join(','), p.maxMb,
-          p.allowResubmit ? 1 : 0, p.maxAttempts, state, body.assignAll ? 1 : 0, p.allowLate ? 1 : 0, p.durationDays, p.maxFiles, p.allowReplace ? 1 : 0);
+          p.allowResubmit ? 1 : 0, p.maxAttempts, state, body.assignAll ? 1 : 0, p.allowLate ? 1 : 0, p.durationDays, p.maxFiles, p.allowReplace ? 1 : 0, p.weight);
     const id = r.lastInsertRowid;
     await saveCriteria(id, p.criteria);
     const stage = await getStage(id);
@@ -115,14 +116,14 @@ export const stageHandlers = {
     const kept = started ? { startDate: s.start_date, maxGrade: s.max_grade, formats: formatsOf(s), maxFileMb: s.max_file_mb, maxFiles: s.max_files, criteria: null } : {};
     const p = parseStage({ ...body, ...kept });
     await db.prepare(`UPDATE stages SET name=?,description=?,instructions=?,start_date=?,deadline=?,max_grade=?,allowed_formats=?,max_file_mb=?,
-        allow_resubmit=?,max_attempts=?,assign_all=?,allow_late=?,duration_days=?,max_files=?,allow_replace=? WHERE id=?`).run(p.name, p.description, p.instructions, p.start, p.deadline, p.maxGrade,
-        p.formats.join(','), p.maxMb, p.allowResubmit ? 1 : 0, p.maxAttempts, body.assignAll ? 1 : 0, p.allowLate ? 1 : 0, p.durationDays, p.maxFiles, p.allowReplace ? 1 : 0, s.id);
+        allow_resubmit=?,max_attempts=?,assign_all=?,allow_late=?,duration_days=?,max_files=?,allow_replace=?,weight=? WHERE id=?`).run(p.name, p.description, p.instructions, p.start, p.deadline, p.maxGrade,
+        p.formats.join(','), p.maxMb, p.allowResubmit ? 1 : 0, p.maxAttempts, body.assignAll ? 1 : 0, p.allowLate ? 1 : 0, p.durationDays, p.maxFiles, p.allowReplace ? 1 : 0, p.weight, s.id);
     if (!started) await saveCriteria(s.id, p.criteria);
     const stage = await getStage(s.id);
     if (body.assignAll) await attach(stage, { assignAll: true });
     if (p.deadline !== s.deadline) await notifyTargets(s.id, 'n.stage.deadline', { stage: p.name, state: s.state, date: p.deadline ?? '—' });
     else await notifyTargets(s.id, 'n.stage.updated', { stage: p.name });
-    const changed = ['name', 'description', 'instructions', 'deadline', 'allow_resubmit', 'max_attempts', 'allow_late', 'allow_replace', 'duration_days']
+    const changed = ['name', 'description', 'instructions', 'deadline', 'allow_resubmit', 'max_attempts', 'allow_late', 'allow_replace', 'duration_days', 'weight']
       .filter(k => String(s[k] ?? '') !== String(stage[k] ?? ''));
     await audit(user, 'stage.updated', { stageId: s.id, detail: { name: p.name, started, changed, prevDeadline: s.deadline } });
     return { ok: true, started, kept: started ? ['max_grade', 'criteria', 'formats', 'max_file_mb', 'max_files', 'start_date'] : [] };
@@ -154,6 +155,30 @@ export const stageHandlers = {
     await notifyTargets(s.id, key, { stage: s.name, state: body.state, date: deadline ?? '—' });
     await audit(user, 'stage.state', { stageId: s.id, detail: { from: s.state, to: body.state, start, deadline, prevDeadline: s.deadline } });
     return { state: body.state, start_date: start, deadline };
+  },
+  // Stage templates: copy stages (with their rubric and rules) into a course — the same course for a new term, or
+  // another course. Dates move by shiftDays; copies start "scheduled" and are not assigned to anyone yet.
+  async copyStages({ user, body }) {
+    const course = (await db.prepare('SELECT id FROM courses WHERE id=?').get(Number(body.courseId))) ?? fail(400, 'Choose a valid course');
+    const ids = Array.isArray(body.stageIds) ? [...new Set(body.stageIds.map(Number))] : fail(400, 'Choose the stages to copy');
+    if (!ids.length) fail(400, 'Choose the stages to copy');
+    const shift = body.shiftDays == null || body.shiftDays === '' ? 0 : Number(body.shiftDays);
+    if (!Number.isInteger(shift) || Math.abs(shift) > 730) fail(400, 'Shift must be a whole number of days (up to 730)');
+    const src = await db.prepare(`SELECT * FROM stages WHERE supervisor_id=? AND id IN (${ids.map(() => '?').join(',')}) ORDER BY position, id`).all(user.id, ...ids);
+    if (src.length !== ids.length) fail(403, 'Not your stage');
+    let pos = (await db.prepare('SELECT COALESCE(MAX(position),0) AS n FROM stages WHERE supervisor_id=?').get(user.id)).n;
+    const move = d => d ? addDays(d, shift) : null;
+    const created = [];
+    for (const s of src) {
+      const id = (await db.prepare(`INSERT INTO stages (supervisor_id,course_id,position,name,description,instructions,start_date,deadline,max_grade,allowed_formats,max_file_mb,
+          allow_resubmit,max_attempts,state,assign_all,allow_late,duration_days,max_files,allow_replace,weight) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'scheduled',?,?,?,?,?,?)`)
+        .run(user.id, course.id, ++pos, s.name, s.description, s.instructions, move(s.start_date), move(s.deadline), s.max_grade, s.allowed_formats, s.max_file_mb,
+          s.allow_resubmit, s.max_attempts, s.assign_all, s.allow_late, s.duration_days, s.max_files, s.allow_replace, s.weight)).lastInsertRowid;
+      await saveCriteria(id, (await criteriaOf(s.id)).map(c => ({ name: c.name, max: c.max_score, position: c.position })));
+      created.push(id);
+    }
+    await audit(user, 'stage.copied', { detail: { from: ids, to: created, course: course.id, shift } });
+    return { created: created.length, ids: created };
   },
   async reorderStages({ user, body }) {
     const ids = Array.isArray(body.ids) ? body.ids.map(Number) : fail(400, 'ids must be a list');

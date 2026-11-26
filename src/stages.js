@@ -30,7 +30,7 @@ export const publicStage = async s => ({
   start_date: s.start_date, deadline: s.deadline, max_grade: s.max_grade, formats: formatsOf(s), max_file_mb: s.max_file_mb,
   allow_resubmit: !!s.allow_resubmit, max_attempts: s.max_attempts, state: s.state, phase: phase(s), assign_all: !!s.assign_all,
   grades_locked: !!s.grades_locked, allow_late: !!s.allow_late, started: await stageStarted(s),
-  duration_days: s.duration_days ?? null, max_files: s.max_files ?? 1, allow_replace: !!s.allow_replace,
+  duration_days: s.duration_days ?? null, max_files: s.max_files ?? 1, allow_replace: !!s.allow_replace, weight: s.weight ?? null,
 });
 
 // Per-research deadline: N days after the stage was activated for that research (when the stage sets a duration).
@@ -45,7 +45,7 @@ export function openFor(row) {
 }
 
 const TARGET_SQL = `SELECT st.id AS stage_id, st.name AS stage_name, COALESCE(t.due_date, st.deadline) AS deadline, st.deadline AS stage_deadline, st.max_grade, st.state, st.start_date, st.position, st.course_id, st.supervisor_id,
-    t.research_id, t.extra_attempts, t.phase, t.activated_at, t.completed_at, t.due_date, r.title, r.status AS research_status, r.team_id, r.student_id, tm.name AS team, u.name AS student,
+    t.research_id, t.extra_attempts, t.created_at AS assigned_at, t.phase, t.activated_at, t.completed_at, t.due_date, r.title, r.status AS research_status, r.team_id, r.student_id, tm.name AS team, u.name AS student,
     (SELECT COUNT(*) FROM stage_submissions x WHERE x.stage_id=t.stage_id AND x.research_id=t.research_id AND x.replaced=0) AS attempts,
     ls.id AS sub_id, ls.attempt_no, ls.status AS sub_status, ls.late AS sub_late, ls.created_at AS submitted_at, ls.filename,
     g.score, g.comment AS grade_comment, g.published AS grade_published,
@@ -135,6 +135,20 @@ export async function assign(stage, researchId) {
     VALUES (?,?,?,CASE WHEN ?::int=1 THEN utc_now() END,?) ON CONFLICT DO NOTHING`).run(stage.id, r.id, phase, workflow ? 1 : 0, workflow ? dueFor(stage) : null);
   return { research: r, added: res.changes > 0, phase };
 }
+// Suggested final grade (out of 100) from the stage grades of a research. When every stage of the research has a
+// weight, each stage counts with its weight (score / max × weight); otherwise by marks (Σ scores / Σ max).
+// Stages not graded yet count as 0; `complete` tells whether every stage is graded.
+export async function suggestedFinal(researchId) {
+  const rows = await db.prepare(`SELECT st.max_grade, st.weight, g.score FROM stage_targets t JOIN stages st ON st.id=t.stage_id
+    LEFT JOIN stage_grades g ON g.stage_id=t.stage_id AND g.research_id=t.research_id WHERE t.research_id=?`).all(researchId);
+  if (!rows.length) return null;
+  const sum = f => rows.reduce((a, r) => a + f(r), 0);
+  const weighted = rows.every(r => r.weight != null) && sum(r => r.weight) > 0;
+  const raw = weighted ? sum(r => (r.score ?? 0) / r.max_grade * r.weight) / sum(r => r.weight) * 100 : sum(r => r.score ?? 0) / sum(r => r.max_grade) * 100;
+  const graded = rows.filter(r => r.score != null).length;
+  return { score: Math.round(Math.min(100, raw) * 10) / 10, method: weighted ? 'weights' : 'marks', graded, stages: rows.length, complete: graded === rows.length };
+}
+
 // Totals across a research's assigned stages.
 // publishedOnly: what a student may see (only published grades count).
 export async function stageTotals(researchId, publishedOnly = false) {
