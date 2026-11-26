@@ -207,5 +207,39 @@ assert.ok((await keys(mate)).includes('n.stage.deadline')); ok('team notified of
 await is(call('PUT', `/stages/${s2}`, { ...d2, deadline: day(1), startDate: day(5) }, doc), 200, 'start date is kept even if sent');
 assert.equal((await call('GET', '/stages', null, doc)).body.find(s => s.id === s2).start_date, d2.start_date); ok('start date unchanged (use postpone)');
 
+// ---------- Suggested final grade (by marks, then by weights) ----------
+let det2 = (await call('GET', `/research/${rid}`, null, doc)).body;
+const sf = det2.suggested_final, all = (await call('GET', '/stages', null, doc)).body;
+const mine = (await stagesOf(lead)).map(e => e.stage.id);
+const maxSum = all.filter(x => mine.includes(x.id)).reduce((a, x) => a + x.max_grade, 0);
+assert.equal(sf.method, 'marks'); assert.equal(sf.score, Math.round(95 / maxSum * 1000) / 10); assert.equal(sf.complete, false); ok('suggested final grade by marks; ungraded stages count as 0');
+assert.equal((await call('GET', `/research/${rid}`, null, lead)).body.suggested_final, null); ok('students do not see the suggestion');
+await is(call('PUT', `/stages/${s1}`, { name: 'Requirements', weight: 101 }, doc), 400, 'weight above 100 refused');
+for (const x of all.filter(x => mine.includes(x.id))) await call('PUT', `/stages/${x.id}`, { name: x.name, description: x.description, instructions: x.instructions, deadline: x.deadline, weight: x.id === s1 ? 50 : 50 / (mine.length - 1) }, doc);
+det2 = (await call('GET', `/research/${rid}`, null, doc)).body;
+assert.equal(det2.suggested_final.method, 'weights'); assert.equal(det2.suggested_final.score, 47.5); ok('with a weight on every stage: 95/100 × 50% = 47.5');
+
+// ---------- Stage templates: copy into another course ----------
+const c2 = (await call('POST', '/courses', { name: 'Software Engineering 2' }, admin)).body;
+const c2id = c2.id ?? (await call('GET', '/courses', null, admin)).body.find(c => c.name === 'Software Engineering 2').id;
+await is(call('POST', '/stages/copy', { stageIds: [], courseId: c2id }, doc), 400, 'choose at least one stage');
+await is(call('POST', '/stages/copy', { stageIds: [s1], courseId: c2id, shiftDays: 1.5 }, doc), 400, 'shift must be whole days');
+r = await is(call('POST', '/stages/copy', { stageIds: [s1, s2], courseId: c2id, shiftDays: 100 }, doc), 200, 'instructor copies two stages into another course');
+assert.equal(r.body.created, 2);
+const copies = (await call('GET', '/stages', null, doc)).body.filter(x => r.body.ids.includes(x.id));
+const o2 = (await call('GET', '/stages', null, doc)).body.find(x => x.id === s2);
+assert.deepEqual(copies.map(x => x.name), ['Requirements', o2.name]); assert.ok(copies.every(x => x.state === 'scheduled' && x.counts.assigned === 0)); ok('copies keep their order, start scheduled and unassigned');
+assert.equal(copies[1].deadline, (d => new Date(Date.parse(d + 'T00:00:00Z') + 100 * 86400000).toISOString().slice(0, 10))(o2.deadline)); assert.equal(copies[1].max_grade, 50); assert.equal(copies[0].weight, 50); ok('dates moved by 100 days; grade and weight kept');
+const docOther = await (async () => { await call('POST', '/users', { name: 'Dr. X', email: 'x@example.com', password: 'secret1', role: 'supervisor' }, admin); return login('x@example.com', 'secret1'); })();
+await is(call('POST', '/stages/copy', { stageIds: [s1], courseId: c2id }, docOther), 403, "cannot copy another instructor's stages");
+
+// ---------- Workflow report ----------
+const rep = (await call('GET', '/supervisor/reports', null, doc)).body.workflow;
+const wr = rep.find(x => x.id === rid);
+assert.ok(wr && wr.stages >= 3 && wr.completed >= 1 && wr.progress_percent > 0); ok('workflow report lists progress per research');
+assert.ok(rep.every(x => ['student', 'instructor', null].includes(x.waiting_on))); assert.ok(rep.some(x => x.current_stage)); ok('current stage and who has to act next');
+const csv = (await call('GET', '/supervisor/reports/export', null, doc)).body.toString();
+assert.ok(csv.includes('Workflow') && csv.includes('Waiting on')); ok('CSV export includes the workflow section');
+
 console.log(`\nAll ${n} workflow checks passed`);
 server.close(); process.exit(0);

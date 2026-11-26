@@ -68,6 +68,9 @@ export const supervisorHandlers = {
     csv.push(''); row(['Not submitted / late']);
     row(['Stage', 'Student/Team', 'Research', 'Deadline', 'Late']);
     for (const m of rep.missing) row([m.stage, m.label, m.title, m.deadline, m.late ? 'yes' : '']);
+    csv.push(''); row(['Workflow']);
+    row(['Research', 'Student/Team', 'Current stage', 'Status', 'Waiting on', 'Days in stage', 'Days waiting for review', 'Deadline', 'Late', 'Completed stages', 'Stages', 'Progress %']);
+    for (const w of rep.workflow) row([w.title, w.label, w.current_stage ?? (w.finished ? 'all completed' : ''), w.status, w.waiting_on, w.days_in_stage, w.days_waiting_review, w.deadline, w.late ? 'yes' : '', w.completed, w.stages, w.progress_percent]);
     return { file: Buffer.from('﻿' + csv.join('\r\n'), 'utf8'), filename: 'supervisor-report.csv', contentType: 'text/csv; charset=utf-8' };
   },
 
@@ -111,5 +114,25 @@ async function buildReport(supId) {
   const missing = rows.filter(r => r.missing && (r.state === 'open' || r.late)).map(r => ({
     stage_id: r.stage_id, stage: r.stage_name, research_id: r.research_id, label: label(r), title: r.title, deadline: r.deadline, late: r.late }));
   const lateTeams = [...new Set(rows.filter(r => r.late).map(r => label(r)))];
-  return { research: perResearch, stages, missing, late_teams: lateTeams };
+  return { research: perResearch, stages, missing, late_teams: lateTeams, workflow: workflowRows(research, rows) };
+}
+
+// Where every approved research stands: its current stage, for how long, who has to act next, and how far it is.
+// waiting_on: 'student' (submit / resubmit) | 'instructor' (review a submission) | null (finished or no stage).
+const daysSince = ts => ts ? Math.max(0, Math.floor((Date.parse(today() + 'T00:00:00Z') - Date.parse(ts.slice(0, 10) + 'T00:00:00Z')) / 86400000)) : null;
+function workflowRows(research, rows) {
+  return research.filter(r => r.status === 'approved').map(r => {
+    const mine = rows.filter(x => x.research_id === r.id);
+    const cur = mine.find(x => x.phase === 'active' && x.status !== 'approved');
+    const done = mine.filter(x => x.phase === 'completed' || x.status === 'approved').length;
+    const waiting = !cur ? null : cur.status === 'submitted' ? 'instructor' : 'student';
+    return {
+      id: r.id, title: r.title, label: r.team ?? r.student, stages: mine.length, completed: done,
+      progress_percent: pct(done, mine.length), finished: mine.length > 0 && done === mine.length,
+      current_stage: cur?.stage_name ?? null, current_stage_id: cur?.stage_id ?? null, status: cur ? cur.display_status : null,
+      waiting_on: waiting, days_in_stage: cur ? daysSince(cur.activated_at ?? cur.assigned_at) : null,
+      days_waiting_review: waiting === 'instructor' ? daysSince(cur.submitted_at) : null,
+      deadline: cur?.deadline ?? null, late: !!cur?.late,
+    };
+  }).sort((a, b) => (b.late - a.late) || ((b.days_in_stage ?? -1) - (a.days_in_stage ?? -1)));
 }

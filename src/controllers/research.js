@@ -5,7 +5,7 @@ import { checkFile, createSubmission, readStored } from '../files.js';
 import { audit } from '../audit.js';
 import { enrolled, teamFor, isLeader, sizeOf, getTeam } from '../teams.js';
 import { studentTeamHandlers } from './studentTeams.js';
-import { stageTotals } from '../stages.js';
+import { stageTotals, suggestedFinal } from '../stages.js';
 import { notify, notifySupervisor } from '../notifications.js';
 import { updateStatus, getResearch, accessible, listFor, STATUSES, MAX_PAGE } from '../research.js';
 
@@ -103,7 +103,7 @@ export const researchHandlers = {
     const reviews = await db.prepare(`SELECT v.id,v.decision,v.comment,v.created_at,u.name AS reviewer FROM topic_reviews v JOIN users u ON u.id=v.reviewer_id WHERE v.research_id=? ORDER BY v.id`).all(r.id);
     const leader = student && (r.team_id ? await isLeader(user.id, r.team_id) : r.student_id === user.id);
     return { ...r, grade: shown?.score ?? null, grade_comment: shown?.comment ?? null, grade_published: g ? !!g.published : false, submissions: subs,
-      topic_reviews: reviews, stage_totals: await stageTotals(r.id, student),
+      topic_reviews: reviews, stage_totals: await stageTotals(r.id, student), suggested_final: student ? null : await suggestedFinal(r.id),
       can_edit_topic: student && r.status === 'changes_requested' && leader,
       is_leader: leader };
   },

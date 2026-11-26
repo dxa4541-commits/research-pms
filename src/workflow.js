@@ -11,7 +11,7 @@ import { db } from './db.js';
 import { fail } from './errors.js';
 import { notify, notifyParties } from './notifications.js';
 import { audit } from './audit.js';
-import { dueFor } from './stages.js';
+import { dueFor, suggestedFinal } from './stages.js';
 
 export const REJECT_POLICIES = ['resubmit', 'stop', 'advance'];
 const DEFAULTS = { auto_first_stage: true, reject_policy: 'resubmit' };
@@ -81,7 +81,7 @@ export async function activateNext(research, actor) {
     const left = await db.prepare("SELECT COUNT(*) AS n FROM stage_targets WHERE research_id=? AND phase NOT IN ('completed')").get(research.id);
     if (research.workflow_started_at && left.n === 0 && await db.prepare('SELECT 1 FROM stage_targets WHERE research_id=?').get(research.id)) {
       await notifyParties(research, 'n.workflow.done', { title: research.title });
-      await notify(research.supervisor_id, 'n.workflow.doneSup', { title: research.title }, research.id);
+      await notify(research.supervisor_id, 'n.workflow.doneSup', { title: research.title, score: (await suggestedFinal(research.id))?.score ?? '—' }, research.id);
       await audit(actor, 'workflow.completed', { researchId: research.id });
     }
     return null;

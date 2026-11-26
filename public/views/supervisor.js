@@ -1,6 +1,6 @@
 // Supervisor views: dashboard, submissions & reviews queue, stage management, grades overview and reports.
 import { $, esc, t, badge, toast, fmtDate, fmtDay, state, api, downloadPath, act, courseOpts, render, notifText } from '../core.js';
-import { icon, avatar, statCard, th, sortRows, bindSort, dateField, bindDateFields, num, progress, remBadge, pageHeader, empty, setCrumbs, confirmDialog, tabsHtml, paginate, pagerHtml, bindPager, go } from '../ui.js';
+import { icon, avatar, statCard, th, sortRows, bindSort, dateField, bindDateFields, num, progress, remBadge, pageHeader, empty, setCrumbs, confirmDialog, tabsHtml, paginate, pagerHtml, bindPager, go, modal } from '../ui.js';
 import { renderResearchStages, stateBadge } from './stages.js';
 import { notifMeta } from './notifications.js';
 
@@ -80,7 +80,7 @@ export async function renderStages(view) {
   setCrumbs([{ label: t('nav.stages') }]);
   const [stages, wf] = await Promise.all([api('GET', '/stages'), api('GET', '/supervisor/settings').catch(() => ({ not_started: [] }))]);
   const waiting = wf.not_started ?? [];
-  view.innerHTML = `${pageHeader({ title: t('stagesTitle'), sub: t('st.sub'), actions: `<button id="new">${icon('plus')} ${t('newStage')}</button>` })}
+  view.innerHTML = `${pageHeader({ title: t('stagesTitle'), sub: t('st.sub'), actions: `${stages.length ? `<button class="ghost" id="copy">${icon('layers')} ${t('cp.btn')}</button>` : ''}<button id="new">${icon('plus')} ${t('newStage')}</button>` })}
     ${waiting.length && stages.length ? `<div class="alert warn" style="margin-bottom:16px">${icon('alert')}<div class="grow"><p style="margin:0"><b>${t('wf.pendingT', { n: waiting.length })}</b></p>
       <p class="small" style="margin:4px 0 0">${t('wf.pendingD')} ${waiting.slice(0, 5).map(x => `<span class="chip">${esc(x.label)} — ${esc(x.title)}</span>`).join(' ')}${waiting.length > 5 ? ' …' : ''}</p></div>
       <button class="ok" id="startAll">${icon('layers')} ${t('wf.startAll')}</button></div>` : ''}
@@ -93,6 +93,7 @@ export async function renderStages(view) {
         <button class="ghost sm" data-open="${s.id}">${t('stageTargets')} ${icon('right')}</button><button class="ghost sm" data-edit="${s.id}">${icon('edit')} ${t('edit')}</button>${s.deletable ? `<button class="bad sm" data-del="${s.id}">${icon('trash')} ${t('del')}</button>` : ''}</div></div></section>`; }).join('')
       : `<div class="card">${empty({ ic: 'layers', title: t('noStages'), text: t('tl.noStagesD'), action: `<button id="new2">${icon('plus')} ${t('newStage')}</button>` })}</div>`}`;
   ['new', 'new2'].forEach(id => $('#' + id)?.addEventListener('click', () => { state.stageForm = { id: null }; render(); }));
+  $('#copy')?.addEventListener('click', () => openCopy(stages));
   $('#startAll')?.addEventListener('click', act(async () => {
     if (!await confirmDialog({ title: t('wf.startAll'), text: t('wf.confirmAll', { n: waiting.length }), confirm: t('wf.start'), tone: 'ok' })) return;
     const r = await api('POST', '/supervisor/workflow/start-all'); toast(t('wf.startedN', { n: r.started })); render();
@@ -133,7 +134,9 @@ async function renderStageForm(view) {
         <label class="inl"><input type="checkbox" id="aa" ${s?.assign_all ? 'checked' : ''}> ${t('assignAll')}</label></div></section>
       <section class="card"><h3>${t('sf.workflow')}</h3><p class="hint">${icon('info')} ${t('sf.autoNote')}</p>
         <div class="field-row"><div><label for="du">${t('sf.duration')}</label><input type="number" id="du" min="1" max="365" value="${s?.duration_days ?? ''}"></div>
-          <div><label for="mf">${t('sf.maxFiles')}</label><input type="number" id="mf" min="1" max="10" value="${s?.max_files ?? 1}"></div></div>
+          <div><label for="mf">${t('sf.maxFiles')}</label><input type="number" id="mf" min="1" max="10" value="${s?.max_files ?? 1}"></div>
+          <div><label for="wt">${t('sf.weight')}</label><input type="number" id="wt" min="0" max="100" step="0.5" value="${s?.weight ?? ''}"></div></div>
+        <p class="hint">${t('sf.weightHint')}</p>
         <p class="hint">${t('sf.durationHint')}</p>
         <label class="inl"><input type="checkbox" id="ar" ${s?.allow_replace ?? true ? 'checked' : ''}> ${t('sf.allowReplace')}</label></section>
       ${s ? '' : `<section class="card"><h3>${t('sf.assign')}</h3><label for="st">${t('initialState')}</label><select id="st"><option value="scheduled">${t('state.scheduled')}</option><option value="open">${t('state.open')}</option></select>
@@ -164,7 +167,7 @@ async function renderStageForm(view) {
     const body = { name: $('#n').value, description: $('#d').value, instructions: $('#i').value, startDate: $('#sd').value || null, deadline: $('#dl').value || null,
       maxGrade: $('#mg').value, formats: [...view.querySelectorAll('[data-fmt]:checked')].map(i => i.dataset.fmt), maxFileMb: $('#mb').value,
       maxAttempts: $('#ma').value || null, allowResubmit: $('#rs').checked, allowLate: $('#al').checked, assignAll: $('#aa').checked,
-      durationDays: $('#du').value || null, maxFiles: $('#mf').value || 1, allowReplace: $('#ar').checked, criteria: rows.filter(r => r.name.trim()).map(r => ({ name: r.name, max: r.max })) };
+      durationDays: $('#du').value || null, maxFiles: $('#mf').value || 1, weight: $('#wt').value === '' ? null : $('#wt').value, allowReplace: $('#ar').checked, criteria: rows.filter(r => r.name.trim()).map(r => ({ name: r.name, max: r.max })) };
     if (s) await api('PUT', `/stages/${s.id}`, body);
     else await api('POST', '/stages', { ...body, courseId: $('#c').value, state: $('#st').value, researchIds: [...view.querySelectorAll('#rl input:checked')].map(i => Number(i.value)) });
     back();
@@ -227,7 +230,18 @@ async function renderStageDetail(view, id) {
 // ---------- Reports ----------
 export async function renderSupervisorReports(view) {
   const r = await api('GET', '/supervisor/reports');
+  const wfl = r.workflow ?? [], wf = state.wfFilter ?? 'all';
+  const wfFilters = { all: () => true, instructor: x => x.waiting_on === 'instructor', student: x => x.waiting_on === 'student', late: x => x.late, done: x => x.finished };
+  const wfRows = wfl.filter(wfFilters[wf]);
   view.innerHTML = `${pageHeader({ title: t('reportsTitle'), sub: t('rp.sub'), actions: `<button class="ghost" id="csv">${icon('download')} ${t('exportCsv')}</button>` })}
+    <section class="card"><div class="card-h"><h3>${icon('layers')} ${t('wr.title')}</h3></div><p class="small mute" style="margin-top:0">${t('wr.sub')}</p>
+      <div class="chips" role="group" style="margin-bottom:12px">${Object.keys(wfFilters).map(k => `<button class="${wf === k ? 'on' : ''}" data-wf="${k}">${t('wr.f.' + k)} (${wfl.filter(wfFilters[k]).length})</button>`).join('')}</div>
+      ${wfRows.length ? `<div class="table-wrap"><table class="rt"><thead><tr><th>${t('title')}</th><th>${t('wr.current')}</th><th>${t('wr.waiting')}</th><th>${t('wr.days')}</th><th>${t('deadline')}</th><th>${t('stagesProgress')}</th></tr></thead><tbody>
+      ${wfRows.map(x => `<tr class="click ${x.late ? 'late' : ''}" data-r="${x.id}"><td data-label="${t('title')}"><b>${esc(x.title)}</b><div class="tiny mute">${esc(x.label)}</div></td>
+        <td data-label="${t('wr.current')}">${x.current_stage ? `${esc(x.current_stage)} <span class="badge ${x.status}">${t('ds.' + x.status)}</span>` : x.finished ? `<span class="badge approved">${t('sdw.allDone')}</span>` : `<span class="mute small">${t('wr.none')}</span>`}</td>
+        <td data-label="${t('wr.waiting')}">${x.waiting_on ? `<span class="badge ${x.waiting_on === 'instructor' ? 'warn' : 'info'}">${icon(x.waiting_on === 'instructor' ? 'inbox' : 'user')}${t('wr.w.' + x.waiting_on)}</span>${x.days_waiting_review != null ? `<div class="tiny mute">${x.days_waiting_review ? t('wr.sinceSub', { n: x.days_waiting_review }) : t('wr.subToday')}</div>` : ''}` : '—'}</td>
+        <td data-label="${t('wr.days')}">${x.days_in_stage ?? '—'}</td><td data-label="${t('deadline')}" class="small">${x.deadline ? fmtDay(x.deadline) + ' ' + remBadge(x.deadline) : '—'}${x.late ? ` <span class="badge overdue">${t('late')}</span>` : ''}</td>
+        <td data-label="${t('stagesProgress')}" style="min-width:120px">${progress(x.progress_percent ?? 0)}<span class="tiny mute">${x.completed}/${x.stages}</span></td></tr>`).join('')}</tbody></table></div>` : empty({ ic: 'layers', title: t('wr.empty') })}</section>
     <section class="card"><div class="card-h"><h3>${t('researchProgress')}</h3></div>${r.research.length ? `<div class="table-wrap"><table class="rt"><thead><tr><th>${t('title')}</th><th>${t('status')}</th><th>${t('stagesProgress')}</th><th>${t('missingC')}</th><th>${t('lateC')}</th><th>${t('earned')}</th><th>${t('sdFinal')}</th></tr></thead><tbody>
       ${r.research.map(x => `<tr class="click ${x.late ? 'late' : ''}" data-r="${x.id}"><td data-label="${t('title')}"><b>${esc(x.title)}</b><div class="tiny mute">${esc(x.label)}</div></td><td data-label="${t('status')}">${badge(x.status)}</td>
         <td data-label="${t('stagesProgress')}" style="min-width:130px">${progress(x.progress_percent ?? 0)}<span class="tiny mute">${x.approved}/${x.stages}</span></td><td data-label="${t('missingC')}">${x.missing}</td><td data-label="${t('lateC')}" class="${x.late ? 'overdue' : ''}">${x.late}</td>
@@ -239,6 +253,25 @@ export async function renderSupervisorReports(view) {
         <td data-label="${t('deadline')}">${m.deadline ? fmtDay(m.deadline) : '—'} ${m.late ? `<span class="badge overdue">${t('late')}</span>` : ''}</td></tr>`).join('')}</tbody></table></div>
       ${r.late_teams.length ? `<p class="small"><b>${t('lateTeams')}:</b> ${r.late_teams.map(esc).join('، ')}</p>` : ''}` : empty({ ic: 'checkc', title: t('nothingMissing') })}</section>`;
   $('#csv').onclick = () => downloadPath('/api/supervisor/reports/export', 'supervisor-report.csv');
+  view.querySelectorAll('[data-wf]').forEach(b => b.onclick = () => { state.wfFilter = b.dataset.wf; render(); });
   view.querySelectorAll('tr[data-s]').forEach(tr => tr.onclick = () => openStage(Number(tr.dataset.s)));
   view.querySelectorAll('tr[data-r]').forEach(tr => tr.onclick = () => openResearch(Number(tr.dataset.r)));
+}
+
+// ---------- Stage templates: copy stages into a course (a new term or another course) ----------
+async function openCopy(stages) {
+  const courses = await api('GET', '/courses');
+  const byCourse = [...new Set(stages.map(s => s.course))];
+  const m = modal({ title: t('cp.title'), ic: 'layers', body: `<p class="small mute">${t('cp.sub')}</p>
+    <div class="checks" id="cps" style="max-height:240px;overflow:auto">${byCourse.map(c => `<b class="small">${esc(c)}</b>${stages.filter(s => s.course === c).map(s => `<label><input type="checkbox" value="${s.id}" checked> ${esc(s.name)} <span class="mute small">(${num(s.max_grade)}${s.criteria.length ? ' · ' + t('rubric') : ''})</span></label>`).join('')}`).join('')}</div>
+    <label for="cpc">${t('cp.to')}</label><select id="cpc">${courseOpts(courses)}</select>
+    <label for="cpd">${t('cp.shift')}</label><input type="number" id="cpd" min="-730" max="730" step="1" value="0"><p class="hint">${t('cp.shiftHint')}</p>`,
+    actions: `<button class="ghost" data-x>${t('cancel')}</button><button class="ok" data-go>${icon('check')} ${t('cp.go')}</button>` });
+  m.el.querySelector('[data-x]').onclick = m.close;
+  m.el.querySelector('[data-go]').onclick = act(async () => {
+    const stageIds = [...m.el.querySelectorAll('#cps input:checked')].map(i => Number(i.value));
+    if (!stageIds.length) throw new Error(t('cp.pick'));
+    const r = await api('POST', '/stages/copy', { stageIds, courseId: m.el.querySelector('#cpc').value, shiftDays: m.el.querySelector('#cpd').value || 0 });
+    m.close(); toast(t('cp.done', { n: r.created })); render();
+  });
 }

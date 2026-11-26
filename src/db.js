@@ -375,6 +375,7 @@ ALTER TABLE research ADD COLUMN IF NOT EXISTS workflow_started_at TEXT;
 ALTER TABLE stages ADD COLUMN IF NOT EXISTS duration_days INTEGER;            -- deadline = activation + N days (per research)
 ALTER TABLE stages ADD COLUMN IF NOT EXISTS max_files INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE stages ADD COLUMN IF NOT EXISTS allow_replace INTEGER NOT NULL DEFAULT 1; -- replace a submission before review/deadline
+ALTER TABLE stages ADD COLUMN IF NOT EXISTS weight DOUBLE PRECISION;          -- share (%) of the final grade; null = by marks
 ALTER TABLE stage_targets ADD COLUMN IF NOT EXISTS phase TEXT NOT NULL DEFAULT 'active'; -- locked | active | completed | closed
 ALTER TABLE stage_targets ADD COLUMN IF NOT EXISTS activated_at TEXT;
 ALTER TABLE stage_targets ADD COLUMN IF NOT EXISTS due_date TEXT;             -- per-research deadline (overrides the stage's)
