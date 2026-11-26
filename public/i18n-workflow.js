@@ -91,6 +91,7 @@ export const ERR_EXTRA = {
   'The deadline has passed; the submission can no longer be replaced': 'انتهى الموعد النهائي؛ لا يمكن استبدال التسليم',
   'Only one file can be submitted for this stage': 'يُسمح بملف واحد فقط في هذه المرحلة', 'Invalid submission token': 'رمز تسليم غير صالح',
   'Rejection policy must be resubmit, stop or advance': 'سياسة الرفض غير صالحة', 'Choose at least one team member': 'اختر عضواً واحداً على الأقل',
+  'This stage already has submissions or grades and cannot be deleted': 'لا يمكن حذف مرحلة فيها تسليمات أو درجات',
 };
 export const ERR_EXTRA_PATTERNS = [
   [/^At most (\d+) files can be submitted$/, m => `يُسمح بـ ${m[1]} ملفات كحد أقصى`],
