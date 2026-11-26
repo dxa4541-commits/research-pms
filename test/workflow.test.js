@@ -241,5 +241,14 @@ assert.ok(rep.every(x => ['student', 'instructor', null].includes(x.waiting_on))
 const csv = (await call('GET', '/supervisor/reports/export', null, doc)).body.toString();
 assert.ok(csv.includes('Workflow') && csv.includes('Waiting on')); ok('CSV export includes the workflow section');
 
+// ---------- Team card: what the team handed in for each stage ----------
+const owls = (await call('GET', '/teams', null, doc)).body.find(x => x.name === 'Owls');
+const tl = owls.stage_list;
+assert.equal(tl[0].name, 'Requirements'); assert.equal(tl[0].status, 'approved'); assert.equal(tl[0].score, 95); ok('team card lists the stages in order with status and grade');
+assert.deepEqual(tl[0].files.map(f => f.filename), ['req-v3.pdf']); assert.ok(tl[0].submitted_at); ok('latest submitted files and submission time per stage');
+const rep3 = tl.find(x => x.name === 'Report');
+assert.deepEqual(rep3.files.map(f => f.filename), ['report.pdf', 'appendix.pdf']); ok('several files of one submission');
+assert.equal((await call('GET', `/stage-submission-files/${rep3.files[0].id}/file`, null, doc)).status, 200); ok('instructor downloads a file from the team card');
+
 console.log(`\nAll ${n} workflow checks passed`);
 server.close(); process.exit(0);

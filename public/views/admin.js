@@ -1,6 +1,7 @@
 // Teams (supervisor/admin), admin dashboard, reports, users, courses, registrations and approved IDs.
 import { $, esc, t, badge, dueBadge, state, api, act, courseOpts, roleLabel, render, fmtDate, fmtDay, toast, notifText, lang } from '../core.js';
-import { icon, avatar, statCard, donut, th, sortRows, bindSort, rowMenu, bindDropdowns, dateField, bindDateFields, num, progress, pageHeader, empty, setCrumbs, confirmDialog, askText, modal, paginate, pagerHtml, bindPager, tabsHtml, go, remBadge } from '../ui.js';
+import { icon, avatar, statCard, donut, th, sortRows, bindSort, rowMenu, bindDropdowns, dateField, bindDateFields, num, progress, pageHeader, empty, setCrumbs, confirmDialog, askText, modal, paginate, pagerHtml, bindPager, tabsHtml, go, remBadge, canView, viewPath, fmtBytes } from '../ui.js';
+import { downloadPath } from '../core.js';
 
 const tile = (ic, tone, label, v, to = '') => `<${to ? 'button' : 'div'} class="stat ${to ? 'click' : ''}" ${to ? `data-go="${to}"` : ''}><span class="ic ${tone}">${icon(ic)}</span><div><b>${v}</b><span class="l">${label}</span></div></${to ? 'button' : 'div'}>`;
 const PER = 10;
@@ -109,6 +110,18 @@ function bindCourseRules(view) {
 }
 
 // ---------- Supervisor/Admin: form and manage teams ----------
+// The team's stages in order: what it handed in for each one, when, its files (view / download) and the grade.
+const TS_ICON = { approved: ['checkc', 'ok'], submitted: ['clock', 'warn'], under_review: ['clock', 'warn'], resubmitted: ['clock', 'warn'], changes_requested: ['edit', 'warn'], rejected: ['x', 'bad'], locked: ['lock', ''], open: ['upload', 'teal'], closed: ['lock', ''], not_started: ['calendar', ''] };
+function teamStages(x) {
+  if (!x.stage_list?.length) return '';
+  return `<div class="tstages">${x.stage_list.map((s, i) => { const [ic, tone] = TS_ICON[s.status] ?? ['layers', ''];
+    return `<div class="todo tstage" data-ts="${x.research.id}:${s.stage_id}" role="button" tabindex="0" aria-label="${esc(s.name)}"><span class="ic ${tone}">${icon(ic)}</span>
+      <div class="t"><b>${i + 1}. ${esc(s.name)}</b>
+        <span class="tiny mute">${s.submitted_at ? `${t('ts.submittedOn', { d: fmtDate(s.submitted_at) })}${s.attempts > 1 ? ' · ' + t('ts.attempt', { n: s.attempts }) : ''}` : s.status === 'locked' ? t('tl.locked') : s.deadline ? `${t('deadlineShort')}: ${fmtDay(s.deadline)}` : t('st.not_submitted')}${s.score != null ? ` · ${t('grade')}: ${num(s.score)}/${num(s.max_grade)}` : ''}</span>
+        ${s.files.length ? `<span class="row" style="gap:4px;margin-top:4px">${s.files.map(f => `${canView(f.filename) ? `<button class="ghost sm" data-tview="${f.id ? `/api/stage-submission-files/${f.id}/file` : `/api/stage-submissions/${s.submission_id}/file`}" data-name="${esc(f.filename)}">${icon('eye')}</button>` : ''}<button class="ghost sm" data-tdl="${f.id ? `/api/stage-submission-files/${f.id}/file` : `/api/stage-submissions/${s.submission_id}/file`}" data-name="${esc(f.filename)}">${icon('download')} <span dir="ltr">${esc(f.filename)}</span></button>`).join('')}</span>` : ''}</div>
+      <span class="badge ${s.status}">${t('ds.' + s.status)}</span>${s.late ? `<span class="badge overdue">${t('late')}</span>` : ''}</div>`; }).join('')}</div>`;
+}
+
 export async function renderTeams(view) {
   const [teams, students, courses, reqs] = await Promise.all([api('GET', '/teams'), api('GET', '/students'), api('GET', '/courses'), api('GET', '/membership-requests')]);
   const free = cid => students.filter(s => s.active && s.courses.includes(cid) && !s.teams[cid]);
@@ -122,7 +135,7 @@ export async function renderTeams(view) {
     ${teams.length ? `<div class="grid g2">${teams.map(x => `<section class="card"><div class="card-h"><div><h3>${esc(x.name)}</h3><span class="small mute">${esc(x.course)}</span></div><div class="row">${x.locked ? `<span class="badge closed">${icon('lock')}${t('lockedL')}</span>` : ''}
         <button class="ghost sm" data-lock="${x.id}:${x.locked ? 0 : 1}">${x.locked ? t('unlockTeam') : t('lockTeam')}</button></div></div>
       <p class="small">${t('teamResearch')}: ${x.research ? `<a href="#" data-r="${x.research.id}">${esc(x.research.title)}</a> ${badge(x.research.status)}` : `<span class="mute">${t('noResearchYet')}</span>`}</p>
-      ${x.research ? `<p class="small mute">${t('stageProgress', { a: x.stages.approved, t: x.stages.total, p: x.stages.pending_review, m: x.stages.missing, l: x.stages.late })}</p>${progress(x.stages.total ? x.stages.approved / x.stages.total * 100 : 0)}` : ''}
+      ${x.research ? `<p class="small mute">${t('stageProgress', { a: x.stages.approved, t: x.stages.total, p: x.stages.pending_review, m: x.stages.missing, l: x.stages.late })}</p>${progress(x.stages.total ? x.stages.approved / x.stages.total * 100 : 0)}${teamStages(x)}` : ''}
       <div style="margin-top:8px">${x.members.map(m => `<div class="member">${avatar(m.name)}<div class="t"><b>${esc(m.name)}</b> <span class="mute small" dir="ltr">${esc(m.university_id ?? '')}</span></div>${m.leader ? `<span class="badge teal">${icon('star')}${t('teamLeader')}</span>` : `<button class="ghost sm" data-lead="${x.id}:${m.id}">${t('setLeader')}</button>`}<button class="ghost sm icon" data-rm="${x.id}:${m.id}" aria-label="${t('removeMember')}" data-tip="${t('removeMember')}">${icon('x')}</button></div>`).join('')}</div>
       <div class="row" style="margin-top:10px"><select data-addsel="${x.id}" aria-label="${t('addMember')}"><option value="">${t('addMember')}…</option>${free(x.course_id).map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select><button class="ghost sm" data-add="${x.id}">${t('add')}</button>
         ${state.user.role === 'supervisor' ? `<button class="ghost sm" data-msg="${x.id}">${icon('message')} ${t('messageTeam')}</button>` : ''}<button class="ghost sm" data-hist="${x.id}">${icon('clock')} ${t('teamHistory')}</button></div><div id="h${x.id}"></div></section>`).join('')}</div>`
@@ -142,6 +155,12 @@ export async function renderTeams(view) {
     await api('POST', '/teams', { name: $('#n').value, courseId: $('#c').value, memberIds, leaderId: lead && memberIds.includes(Number(lead.value)) ? Number(lead.value) : undefined }); render();
   }, 'toast.team');
   bindCourseRules(view);
+  view.querySelectorAll('[data-tview]').forEach(b => b.onclick = e => { e.stopPropagation(); viewPath(b.dataset.tview, b.dataset.name); });
+  view.querySelectorAll('[data-tdl]').forEach(b => b.onclick = e => { e.stopPropagation(); downloadPath(b.dataset.tdl, b.dataset.name); });
+  view.querySelectorAll('[data-ts]').forEach(row => {
+    const open = () => { const [rid, sid] = row.dataset.ts.split(':'); (state.stOpen ??= new Set()).add(`${rid}:${sid}`); state.tab = 'research'; state.openId = Number(rid); state.researchTab = 'stages'; render(); };
+    row.onclick = open; row.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };
+  });
   const upd = (path, body) => act(async () => { await api('PUT', path, body); render(); }, 'toast.teamUpdated');
   view.querySelectorAll('[data-lead]').forEach(b => { const [tid, uid] = b.dataset.lead.split(':'); b.onclick = upd(`/teams/${tid}/leader`, { userId: Number(uid) }); });
   view.querySelectorAll('[data-rm]').forEach(b => { const [tid, uid] = b.dataset.rm.split(':'); b.onclick = async () => { if (await confirmDialog({ title: t('removeMember'), text: t('confirmRemoveMember'), confirm: t('removeMember'), tone: 'bad' })) upd(`/teams/${tid}/members`, { remove: [Number(uid)] })(); }; });
