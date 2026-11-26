@@ -5,6 +5,10 @@ import { notify } from './notifications.js';
 import { stageStarted } from './stages.js';
 
 export const getCourse = async id => (await db.prepare('SELECT * FROM courses WHERE id=?').get(id)) ?? fail(404, 'Course not found');
+// A course whose term has ended is read-only: no new topics, teams, stages or submissions.
+export const ENDED = 'This course has ended (term archived); it is read-only';
+export const openCourse = async id => { const c = await getCourse(id); return c.archived_at ? fail(409, ENDED) : c; };
+export const courseEnded = async id => !!(await db.prepare('SELECT archived_at FROM courses WHERE id=?').get(id))?.archived_at;
 export const getTeam = async id => (await db.prepare('SELECT * FROM teams WHERE id=?').get(id)) ?? fail(404, 'Team not found');
 export const activeMembers = teamId => db.prepare(`SELECT u.id,u.name,u.university_id,tm.role,tm.joined_at FROM team_members tm JOIN users u ON u.id=tm.user_id
   WHERE tm.team_id=? AND tm.left_at IS NULL ORDER BY tm.role DESC, u.name`).all(teamId);
@@ -16,7 +20,7 @@ export const teamIdsOf = async userId => (await db.prepare('SELECT team_id FROM 
 export const teamFor = (userId, courseId) => db.prepare(`SELECT t.* FROM team_members tm JOIN teams t ON t.id=tm.team_id
   WHERE tm.user_id=? AND tm.course_id=? AND tm.left_at IS NULL`).get(userId, courseId);
 export const enrolled = async (userId, courseId) => !!await db.prepare('SELECT 1 FROM enrollments WHERE user_id=? AND course_id=?').get(userId, courseId);
-export const coursesOf = userId => db.prepare('SELECT c.* FROM courses c JOIN enrollments e ON e.course_id=c.id WHERE e.user_id=? ORDER BY c.name').all(userId);
+export const coursesOf = userId => db.prepare('SELECT c.* FROM courses c JOIN enrollments e ON e.course_id=c.id WHERE e.user_id=? AND c.archived_at IS NULL ORDER BY c.name').all(userId);
 
 export async function history(teamId, userId, actorId, action, detail = null) {
   await db.prepare('INSERT INTO team_history (team_id,user_id,actor_id,action,detail) VALUES (?,?,?,?,?)').run(teamId, userId, actorId, action, detail == null ? null : JSON.stringify(detail));
@@ -41,6 +45,7 @@ export async function addMember(team, userId, { actor = null, role = 'member', b
   const u = await db.prepare('SELECT * FROM users WHERE id=?').get(userId);
   if (!u || u.role !== 'student' || !u.active) fail(400, 'User is not an active student');
   const course = await getCourse(team.course_id);
+  if (course.archived_at) fail(409, ENDED);
   if (course.team_mode === 'individual') fail(409, 'This course only allows individual research');
   if (!await enrolled(userId, course.id)) fail(409, 'The student is not enrolled in this course');
   if (await teamFor(userId, course.id)) fail(409, 'The student already belongs to a team in this course');

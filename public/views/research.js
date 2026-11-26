@@ -11,7 +11,8 @@ export async function renderResearchList(view) {
   const role = state.user.role;
   const status = state.rfStatus ?? '', course = state.rfCourse ?? '', team = state.rfTeam ?? '', prog = state.rfProg ?? '', sup = state.rfSup ?? '';
   const page = state.rpage ?? 1, q = state.q ?? '';
-  const all = await api('GET', '/research?limit=500' + (status ? `&status=${status}` : '') + (q ? `&q=${encodeURIComponent(q)}` : ''));
+  const arch = !!state.rfArchived;
+  const all = await api('GET', '/research?limit=500' + (status ? `&status=${status}` : '') + (q ? `&q=${encodeURIComponent(q)}` : '') + (arch ? '&archived=1' : ''));
   const uniq = k => [...new Set(all.map(r => r[k]).filter(Boolean))].sort();
   const pct = r => r.stages_total ? r.stages_approved / r.stages_total * 100 : 0;
   const rows = all.filter(r => (!course || r.course === course) && (!team || r.team === team) && (!sup || r.supervisor === sup)
@@ -28,6 +29,7 @@ export async function renderResearchList(view) {
       ${sel('ft', t('team'), team, uniq('team').map(c => [c, c]))}
       ${isStudent() ? sel('fu', t('supervisor'), sup, uniq('supervisor').map(c => [c, c])) : ''}
       ${sel('fp', t('rl.progress'), prog, [['none', t('rl.p0')], ['going', t('rl.p1')], ['done', t('rl.p2')]])}
+      <label class="inl small"><input type="checkbox" id="farch" ${arch ? 'checked' : ''}> ${t('et.showArchived')}</label>
       ${(status || course || team || prog || sup || q) ? `<button class="ghost" id="clr">${icon('x')} ${t('rl.clear')}</button>` : ''}</div></div>
     <div class="card">${rows.length ? `<div class="table-wrap"><table class="rt"><thead><tr>${th(t('title'), 'title', state.rlsort)}${th(t('team'), 'team', state.rlsort)}${th(t('course'), 'course', state.rlsort)}${th(t(isStudent() ? 'supervisor' : 'student'), isStudent() ? 'supervisor' : 'student', state.rlsort)}<th>${t('rl.stage')}</th>${th(t('rl.progress'), 'progress', state.rlsort)}${th(t('deadline'), 'deadline', state.rlsort)}${th(t('status'), 'status', state.rlsort)}<th><span class="sr-only">${t('actions')}</span></th></tr></thead>
       <tbody>${pageRows.map(r => `<tr class="click ${r.overdue ? 'late' : ''}" data-id="${r.id}"><td data-label="${t('title')}"><b>${esc(r.title)}</b></td>
@@ -40,6 +42,7 @@ export async function renderResearchList(view) {
   const set = (k, v) => { state[k] = v; state.rpage = 1; render(); };
   $('#sf').onsubmit = e => { e.preventDefault(); state.q = $('#sq').value.trim(); state.rpage = 1; render(); };
   [['fs', 'rfStatus'], ['fc', 'rfCourse'], ['ft', 'rfTeam'], ['fp', 'rfProg'], ['fu', 'rfSup']].forEach(([id, k]) => { const el = $('#' + id); if (el) el.onchange = () => set(k, el.value); });
+  $('#farch').onchange = e => { state.rfArchived = e.target.checked; state.rpage = 1; render(); };
   $('#clr')?.addEventListener('click', () => { Object.assign(state, { rfStatus: '', rfCourse: '', rfTeam: '', rfProg: '', rfSup: '', q: '', rpage: 1 }); render(); });
   ['newtopic', 'newtopic2'].forEach(id => $('#' + id)?.addEventListener('click', () => go('topic')));
   view.querySelectorAll('tr.click').forEach(tr => tr.onclick = e => { if (!e.target.closest('button')) { state.openId = Number(tr.dataset.id); state.researchTab = null; render(); } });
@@ -64,7 +67,7 @@ export async function renderDetail(view, id) {
   const back = () => { state.openId = null; state.researchTab = null; render(); };
   setCrumbs([{ label: t(isStudent() ? 'nav.myResearch' : 'nav.research'), go: back }, { label: r.title }]);
   const done = stagesData.stages.filter(e => tlState(e) === 'done').length, total = stagesData.stages.length;
-  view.innerHTML = `<div class="page-h"><div><div class="row" style="gap:10px"><h1 style="margin:0">${esc(r.title)}</h1>${badge(r.status)}</div>
+  view.innerHTML = `${r.course_archived_at ? `<div class="alert" style="margin-bottom:14px">${icon('lock')}<p>${t('et.readOnly')}</p></div>` : ''}<div class="page-h"><div><div class="row" style="gap:10px"><h1 style="margin:0">${esc(r.title)}</h1>${badge(r.status)}</div>
       <p>${esc(r.course)} · ${r.team ? `${t('team')}: ${esc(r.team)}` : t('individual')} · ${t('supervisor')}: ${esc(r.supervisor)}</p></div>
       <div class="actions"><button class="ghost" id="back">${icon('left')} ${t('back')}</button></div></div>
     ${tabsHtml(tabs.map(k => ({ key: k, label: t('rd.' + k), count: k === 'stages' ? total || null : k === 'submissions' ? (stagesData.stages.reduce((a, e) => a + e.submissions.length, 0) + r.submissions.length) || null : null })), tab)}
@@ -86,8 +89,8 @@ const memberList = tm => tm ? tm.members.map(m => `<div class="member">${avatar(
 function overview(pane, { r, stagesData, teamInfo, role, done, total }) {
   const cur = stagesData.stages.find(e => !['done', 'closed'].includes(tlState(e)));
   const pct = total ? done / total * 100 : 0;
-  const dec = isSup() && r.status === 'pending';
-  const notStarted = isSup() && r.status === 'approved' && !r.workflow_started_at;
+  const dec = isSup() && r.status === 'pending' && !r.course_archived_at;
+  const notStarted = isSup() && r.status === 'approved' && !r.workflow_started_at && !r.course_archived_at;
   pane.innerHTML = `${dec ? `<div class="alert warn" style="margin-bottom:16px">${icon('alert')}<p><b>${t('rd.decisionNeeded')}</b> <button class="link" data-gotab="topic">${t('rd.goTopic')}</button></p></div>` : ''}
     ${notStarted ? `<div class="alert warn" style="margin-bottom:16px">${icon('layers')}<p class="grow"><b>${t('wf.oneT')}</b><br><span class="small">${t('wf.oneD')}</span></p><button class="ok" id="wfStart">${icon('check')} ${t('wf.start')}</button></div>` : ''}
     ${r.status === 'changes_requested' && isStudent() ? `<div class="alert warn" style="margin-bottom:16px">${icon('edit')}<p><b>${t('changesBanner')}</b> <button class="link" data-gotab="topic">${t('rd.goTopic')}</button></p></div>` : ''}
@@ -124,7 +127,7 @@ function topic(pane, { r, role, id }) {
     ${mayEdit ? `<section class="card"><h3>${t('editTopic')}</h3><form id="tf"><label for="tt">${t('title')}</label><input id="tt" required maxlength="200" value="${esc(r.title)}">
       <label for="td">${t('description')}</label><textarea id="td" maxlength="2000">${esc(r.description ?? '')}</textarea><label for="tp">${t('problemL')}</label><textarea id="tp" maxlength="2000">${esc(r.problem ?? '')}</textarea>
       <label for="to">${t('objectivesL')}</label><textarea id="to" maxlength="2000">${esc(r.objectives ?? '')}</textarea><p><button>${icon('send')} ${t('resubmitTopic')}</button></p></form></section>` : ''}
-    ${isSup() && ['pending', 'changes_requested', 'approved'].includes(r.status) ? `<section class="card"><h3>${t('rd.decision')}</h3><label for="cm">${t('comment')}</label><textarea id="cm"></textarea>
+    ${isSup() && !r.course_archived_at && ['pending', 'changes_requested', 'approved'].includes(r.status) ? `<section class="card"><h3>${t('rd.decision')}</h3><label for="cm">${t('comment')}</label><textarea id="cm"></textarea>
       <div class="row" style="margin-top:10px"><button class="ok" data-d="approve">${icon('check')} ${t('approve')}</button><button class="warn" data-d="request_changes">${icon('edit')} ${t('requestChanges')}</button><button class="bad" data-d="reject">${icon('x')} ${t('reject')}</button></div><p class="hint">${t('rejectHint')}</p></section>` : ''}
     <section class="card"><div class="card-h"><h3>${t('versionsFeedback')}</h3></div>
       ${r.submissions.length ? r.submissions.map(s => `<div class="ver"><div class="row"><b class="grow">${t('version')} ${s.version_no}</b><span class="small mute">${fmtDate(s.created_at)}</span>

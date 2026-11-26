@@ -78,9 +78,10 @@ export async function renderStages(view) {
   if (state.stageForm) return renderStageForm(view);
   if (state.openStageId) return renderStageDetail(view, state.openStageId);
   setCrumbs([{ label: t('nav.stages') }]);
-  const [stages, wf] = await Promise.all([api('GET', '/stages'), api('GET', '/supervisor/settings').catch(() => ({ not_started: [] }))]);
+  const arch = !!state.stArchived;
+  const [stages, wf] = await Promise.all([api('GET', '/stages' + (arch ? '?archived=1' : '')), api('GET', '/supervisor/settings').catch(() => ({ not_started: [] }))]);
   const waiting = wf.not_started ?? [];
-  view.innerHTML = `${pageHeader({ title: t('stagesTitle'), sub: t('st.sub'), actions: `${stages.length ? `<button class="ghost" id="copy">${icon('layers')} ${t('cp.btn')}</button>` : ''}<button id="new">${icon('plus')} ${t('newStage')}</button>` })}
+  view.innerHTML = `${pageHeader({ title: t('stagesTitle'), sub: arch ? t('et.archivedStages') : t('st.sub'), actions: `<label class="inl small"><input type="checkbox" id="sarch" ${arch ? 'checked' : ''}> ${t('et.showArchived')}</label>${stages.length ? `<button class="ghost" id="copy">${icon('layers')} ${t('cp.btn')}</button>` : ''}<button id="new">${icon('plus')} ${t('newStage')}</button>` })}
     ${waiting.length && stages.length ? `<div class="alert warn" style="margin-bottom:16px">${icon('alert')}<div class="grow"><p style="margin:0"><b>${t('wf.pendingT', { n: waiting.length })}</b></p>
       <p class="small" style="margin:4px 0 0">${t('wf.pendingD')} ${waiting.slice(0, 5).map(x => `<span class="chip">${esc(x.label)} — ${esc(x.title)}</span>`).join(' ')}${waiting.length > 5 ? ' …' : ''}</p></div>
       <button class="ok" id="startAll">${icon('layers')} ${t('wf.startAll')}</button></div>` : ''}
@@ -94,6 +95,7 @@ export async function renderStages(view) {
       : `<div class="card">${empty({ ic: 'layers', title: t('noStages'), text: t('tl.noStagesD'), action: `<button id="new2">${icon('plus')} ${t('newStage')}</button>` })}</div>`}`;
   ['new', 'new2'].forEach(id => $('#' + id)?.addEventListener('click', () => { state.stageForm = { id: null }; render(); }));
   $('#copy')?.addEventListener('click', () => openCopy(stages));
+  $('#sarch').onchange = e => { state.stArchived = e.target.checked; render(); };
   $('#startAll')?.addEventListener('click', act(async () => {
     if (!await confirmDialog({ title: t('wf.startAll'), text: t('wf.confirmAll', { n: waiting.length }), confirm: t('wf.start'), tone: 'ok' })) return;
     const r = await api('POST', '/supervisor/workflow/start-all'); toast(t('wf.startedN', { n: r.started })); render();

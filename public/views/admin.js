@@ -123,11 +123,12 @@ function teamStages(x) {
 }
 
 export async function renderTeams(view) {
-  const [teams, students, courses, reqs] = await Promise.all([api('GET', '/teams'), api('GET', '/students'), api('GET', '/courses'), api('GET', '/membership-requests')]);
+  const arch = !!state.tmArchived;
+  const [teams, students, courses, reqs] = await Promise.all([api('GET', '/teams' + (arch ? '?archived=1' : '')), api('GET', '/students'), api('GET', '/courses'), api('GET', '/membership-requests')]);
   const free = cid => students.filter(s => s.active && s.courses.includes(cid) && !s.teams[cid]);
   const pending = reqs.filter(r => r.status === 'pending');
   const kind = r => t('k' + (r.kind === 'leave' ? 'Remove' : r.kind[0].toUpperCase() + r.kind.slice(1)));
-  view.innerHTML = `${pageHeader({ title: t('nav.teams'), sub: t('tm.sub'), actions: `<button id="newteam">${icon('plus')} ${t('formTeam')}</button>` })}
+  view.innerHTML = `${pageHeader({ title: t('nav.teams'), sub: t('tm.sub'), actions: `<label class="inl small"><input type="checkbox" id="tarch" ${arch ? 'checked' : ''}> ${t('et.showArchived')}</label><button id="newteam">${icon('plus')} ${t('formTeam')}</button>` })}
     ${pending.length ? `<section class="card accent"><h3>${icon('inbox')} ${t('mreq')}</h3>${pending.map(r => `<div class="todo"><span class="ic warn">${icon('users')}</span><div class="t"><b>${esc(r.team)} — ${esc(r.member)}</b><span class="small mute"><span class="badge pending">${kind(r)}${r.kind === 'leave' ? ' (' + t('leaveTeam') + ')' : ''}</span> ${esc(r.requested_by)}${r.note ? ' · ' + esc(r.note) : ''}</span></div>
       <button class="ok sm" data-cr="${r.id}:1">${t('approveChange')}</button><button class="bad sm" data-cr="${r.id}:0">${t('rejectChange')}</button></div>`).join('')}</section>` : ''}
     <section class="card" id="newbox" hidden><h3>${t('formTeam')}</h3><form id="f"><div class="field-row"><div><label for="n">${t('teamName')}</label><input id="n" required maxlength="100"></div><div><label for="c">${t('course')}</label><select id="c">${courseOpts(courses)}</select></div></div>
@@ -155,6 +156,7 @@ export async function renderTeams(view) {
     await api('POST', '/teams', { name: $('#n').value, courseId: $('#c').value, memberIds, leaderId: lead && memberIds.includes(Number(lead.value)) ? Number(lead.value) : undefined }); render();
   }, 'toast.team');
   bindCourseRules(view);
+  $('#tarch').onchange = e => { state.tmArchived = e.target.checked; render(); };
   view.querySelectorAll('[data-tview]').forEach(b => b.onclick = e => { e.stopPropagation(); viewPath(b.dataset.tview, b.dataset.name); });
   view.querySelectorAll('[data-tdl]').forEach(b => b.onclick = e => { e.stopPropagation(); downloadPath(b.dataset.tdl, b.dataset.name); });
   view.querySelectorAll('[data-ts]').forEach(row => {
@@ -283,9 +285,44 @@ export async function renderUsers(view) {
 }
 
 export async function renderCourses(view) {
-  const courses = await api('GET', '/courses');
-  view.innerHTML = `${pageHeader({ title: t('courses'), sub: t('co.sub') })}<section class="card"><form id="f" class="row"><input class="grow" id="n" placeholder="${t('courseName')}" required aria-label="${t('courseName')}"><button>${icon('plus')} ${t('addCourse')}</button></form></section>${courses.length ? courseRulesCard(courses) : `<div class="card">${empty({ ic: 'book', title: t('co.empty') })}</div>`}`;
+  const all = await api('GET', '/courses?all=1');
+  const courses = all.filter(c => !c.archived_at), ended = all.filter(c => c.archived_at);
+  view.innerHTML = `${pageHeader({ title: t('courses'), sub: t('co.sub') })}<section class="card"><form id="f" class="row"><input class="grow" id="n" placeholder="${t('courseName')}" required aria-label="${t('courseName')}"><button>${icon('plus')} ${t('addCourse')}</button></form></section>
+    ${courses.length ? `<section class="card"><div class="card-h"><h3>${icon('calendar')} ${t('et.title')}</h3></div><p class="small mute" style="margin-top:0">${t('et.sub')}</p>
+      ${courses.map(c => `<div class="todo"><span class="ic">${icon('book')}</span><div class="t"><b>${esc(c.name)}</b></div><button class="warn sm" data-end="${c.id}">${icon('lock')} ${t('et.btn')}</button></div>`).join('')}</section>` : ''}
+    ${courses.length ? courseRulesCard(courses) : `<div class="card">${empty({ ic: 'book', title: t('co.empty') })}</div>`}
+    ${ended.length ? `<section class="card"><div class="card-h"><h3>${icon('lock')} ${t('et.ended')}</h3></div>${ended.map(c => `<div class="todo"><span class="ic">${icon('lock')}</span><div class="t"><b>${esc(c.name)}</b><span class="tiny mute">${t('et.endedOn', { d: fmtDate(c.archived_at) })}</span></div><button class="ghost sm" data-reopen="${c.id}">${t('et.reopen')}</button></div>`).join('')}</section>` : ''}`;
   $('#f').onsubmit = act(async e => { e.preventDefault(); await api('POST', '/courses', { name: $('#n').value }); render(); }, 'toast.course');
   bindCourseRules(view);
+  view.querySelectorAll('[data-end]').forEach(b => b.onclick = act(() => openEndTerm(Number(b.dataset.end))));
+  view.querySelectorAll('[data-reopen]').forEach(b => b.onclick = act(async () => {
+    if (!await confirmDialog({ title: t('et.reopen'), text: t('et.reopenD'), confirm: t('et.reopen'), tone: 'warn' })) return;
+    await api('POST', `/courses/${b.dataset.reopen}/reopen`); toast(t('et.reopened')); render();
+  }));
   if (state.focusCourse) { state.focusCourse = false; setTimeout(() => $('#n')?.focus(), 0); }
+}
+
+// ---------- End of term: summary of what is still open, label for the ended term, optional new term ----------
+async function openEndTerm(id) {
+  const c = await api('GET', `/courses/${id}/summary`);
+  const warn = [c.awaiting_review && t('et.w.review', { n: c.awaiting_review }), c.pending_topics && t('et.w.topics', { n: c.pending_topics }), c.ungraded_final && t('et.w.final', { n: c.ungraded_final })].filter(Boolean);
+  const m = modal({ title: t('et.titleOf', { c: c.name }), ic: 'lock', tone: 'warn', body: `
+    <p class="small">${t('et.counts', { r: c.research, tm: c.teams, s: c.stages, st: c.students })}</p>
+    ${warn.length ? `<div class="alert warn">${icon('alert')}<p class="small">${warn.join('<br>')}</p></div>` : ''}
+    <p class="small mute">${t('et.what')}</p>
+    <label for="etl">${t('et.label')}</label><input id="etl" maxlength="40" placeholder="${t('et.labelPh')}">
+    <label class="inl" style="margin-top:10px"><input type="checkbox" id="etn" checked> ${t('et.next', { c: esc(c.name) })}</label>
+    <div id="etnb"><label class="inl"><input type="checkbox" id="ets" checked> ${t('et.copy')}</label>
+      <label for="etd">${t('cp.shift')}</label><input type="number" id="etd" min="-730" max="730" step="1" value="0"><p class="hint">${t('cp.shiftHint')}</p></div>`,
+    actions: `<button class="ghost" data-x>${t('cancel')}</button><button class="warn" data-go>${icon('lock')} ${t('et.confirm')}</button>` });
+  const $m = q => m.el.querySelector(q);
+  $m('#etn').onchange = () => { $m('#etnb').hidden = !$m('#etn').checked; };
+  $m('[data-x]').onclick = m.close;
+  $m('[data-go]').onclick = act(async () => {
+    const label = $m('#etl').value.trim();
+    if ($m('#etn').checked && !label) { $m('#etl').focus(); throw new Error(t('et.needLabel')); }
+    const r = await api('POST', `/courses/${id}/end-term`, { label, next: $m('#etn').checked ? { copyStages: $m('#ets').checked, shiftDays: $m('#etd').value || 0 } : null });
+    m.close(); toast(r.next ? t('et.doneNext', { c: r.archived.name, s: r.next.stages }) : t('et.done', { c: r.archived.name })); render();
+  });
+  setTimeout(() => $m('#etl').focus(), 40);
 }

@@ -69,7 +69,8 @@ export async function startWorkflow(research, actor, { manual = false } = {}) {
 // or while the automatic start was switched off).
 export const notStarted = supervisorId => db.prepare(`SELECT r.id, r.title, COALESCE(t.name, u.name) AS label FROM research r
   JOIN users u ON u.id=r.student_id LEFT JOIN teams t ON t.id=r.team_id
-  WHERE r.supervisor_id=? AND r.status='approved' AND r.workflow_started_at IS NULL ORDER BY r.id`).all(supervisorId);
+  WHERE r.supervisor_id=? AND r.status='approved' AND r.workflow_started_at IS NULL
+    AND r.course_id NOT IN (SELECT id FROM courses WHERE archived_at IS NOT NULL) ORDER BY r.id`).all(supervisorId);
 
 // Activates the next queued stage of the research (in stage order) unless one is already active.
 // With nothing left to do, the research workflow is complete.

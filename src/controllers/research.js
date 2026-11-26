@@ -3,7 +3,7 @@ import { db } from '../db.js';
 import { fail, str, need, intParam } from '../errors.js';
 import { checkFile, createSubmission, readStored } from '../files.js';
 import { audit } from '../audit.js';
-import { enrolled, teamFor, isLeader, sizeOf, getTeam } from '../teams.js';
+import { enrolled, teamFor, isLeader, sizeOf, getTeam, ENDED } from '../teams.js';
 import { studentTeamHandlers } from './studentTeams.js';
 import { stageTotals, suggestedFinal } from '../stages.js';
 import { notify, notifySupervisor } from '../notifications.js';
@@ -17,6 +17,7 @@ export const researchHandlers = {
   async registerTopic({ user, body }) {
     const title = need(body.title, 'Title', 200);
     const course = (await db.prepare('SELECT * FROM courses WHERE id=?').get(Number(body.courseId))) ?? fail(400, 'Choose a valid course');
+    if (course.archived_at) fail(409, ENDED);
     if (!await enrolled(user.id, course.id)) fail(403, 'You are not enrolled in this course');
     const sup = (await db.prepare("SELECT id FROM users WHERE id=? AND role='supervisor' AND active=1").get(Number(body.supervisorId))) ?? fail(400, 'Choose a valid supervisor');
     let team = (await teamFor(user.id, course.id)) ?? null, invited = 0;
@@ -55,6 +56,7 @@ export const researchHandlers = {
   async editTopic({ user, params, body }) {
     const r = await accessible(user, Number(params.id));
     if (r.team_id ? !await isLeader(user.id, r.team_id) : r.student_id !== user.id) fail(403, 'Only the team leader can edit the research topic');
+    if (r.course_archived_at) fail(409, ENDED);
     if (r.status === 'approved') fail(409, "An approved topic can only be changed with your supervisor's approval");
     if (r.status === 'pending') fail(409, 'The topic is waiting for review');
     if (r.status === 'rejected') fail(409, 'This proposal was rejected');
@@ -73,6 +75,7 @@ export const researchHandlers = {
     const r = await accessible(user, Number(params.id));
     if (r.team_id ? !await isLeader(user.id, r.team_id) : r.student_id !== user.id) fail(403, 'Only the team leader can upload files');
     if (r.status === 'rejected') fail(409, 'This proposal was rejected; no new versions allowed');
+    if (r.course_archived_at) fail(409, ENDED);
     const { buf } = checkFile(body.filename, body.data);                                   // 3: checkFile(size, type)
     const next = (await db.prepare('SELECT COALESCE(MAX(version_no),0)+1 AS n FROM submissions WHERE research_id=?').get(r.id)).n;
     await createSubmission(r.id, next, body.filename, buf);                                // 4-5: create(versionNo + 1), saveFile(file)
@@ -86,7 +89,7 @@ export const researchHandlers = {
     const status = query?.get('status') || null;
     if (status && !STATUSES.includes(status)) fail(400, 'Invalid status filter');
     return listFor(user, {
-      status, q: str(query?.get('q') ?? '', 100),
+      status, q: str(query?.get('q') ?? '', 100), archived: query?.get('archived') === '1',
       limit: intParam(query?.get('limit'), MAX_PAGE, 1, MAX_PAGE), offset: intParam(query?.get('offset'), 0, 0, 1e9),
     });
   },

@@ -13,6 +13,7 @@ import {
 } from '../stages.js';
 import { activateNext, finishTarget, settingsFor, saveSettings, startWorkflow, notStarted } from '../workflow.js';
 import { own } from '../research.js';
+import { ENDED, courseEnded } from '../teams.js';
 
 const isDate = d => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d));
 const optDate = (v, label) => v == null || v === '' ? null : isDate(v) ? v : fail(400, `${label} must be a date (YYYY-MM-DD)`);
@@ -82,16 +83,18 @@ const targetLabel = r => r.team ? `${r.team}` : r.student;
 
 export const stageHandlers = {
   // ---------- Supervisor: stage CRUD ----------
-  async listStages({ user }) {
-    const stages = user.role === 'admin' ? await db.prepare('SELECT * FROM stages ORDER BY supervisor_id, position, id').all()
-      : await db.prepare('SELECT * FROM stages WHERE supervisor_id=? ORDER BY position, id').all(user.id);
+  async listStages({ user, query }) {
+    const ended = `course_id ${query?.get('archived') === '1' ? '' : 'NOT '}IN (SELECT id FROM courses WHERE archived_at IS NOT NULL)`;
+    const stages = user.role === 'admin' ? await db.prepare(`SELECT * FROM stages WHERE ${ended} ORDER BY supervisor_id, position, id`).all()
+      : await db.prepare(`SELECT * FROM stages WHERE supervisor_id=? AND ${ended} ORDER BY position, id`).all(user.id);
     const course = db.prepare('SELECT name FROM courses WHERE id=?');
     const out = [];
     for (const s of stages) out.push({ ...await publicStage(s), deletable: !await hasWork(s.id), course: (await course.get(s.course_id))?.name, criteria: await criteriaOf(s.id), counts: countsFor(await targets('t.stage_id=?', s.id)) });
     return out;
   },
   async createStage({ user, body }) {
-    const course = (await db.prepare('SELECT id FROM courses WHERE id=?').get(Number(body.courseId))) ?? fail(400, 'Choose a valid course');
+    const course = (await db.prepare('SELECT id, archived_at FROM courses WHERE id=?').get(Number(body.courseId))) ?? fail(400, 'Choose a valid course');
+    if (course.archived_at) fail(409, ENDED);
     const p = parseStage(body);
     const state = body.state === 'open' ? 'open' : 'scheduled';
     const pos = (await db.prepare('SELECT COALESCE(MAX(position),0)+1 AS n FROM stages WHERE supervisor_id=?').get(user.id)).n;
@@ -159,7 +162,8 @@ export const stageHandlers = {
   // Stage templates: copy stages (with their rubric and rules) into a course — the same course for a new term, or
   // another course. Dates move by shiftDays; copies start "scheduled" and are not assigned to anyone yet.
   async copyStages({ user, body }) {
-    const course = (await db.prepare('SELECT id FROM courses WHERE id=?').get(Number(body.courseId))) ?? fail(400, 'Choose a valid course');
+    const course = (await db.prepare('SELECT id, archived_at FROM courses WHERE id=?').get(Number(body.courseId))) ?? fail(400, 'Choose a valid course');
+    if (course.archived_at) fail(409, ENDED);
     const ids = Array.isArray(body.stageIds) ? [...new Set(body.stageIds.map(Number))] : fail(400, 'Choose the stages to copy');
     if (!ids.length) fail(400, 'Choose the stages to copy');
     const shift = body.shiftDays == null || body.shiftDays === '' ? 0 : Number(body.shiftDays);
@@ -307,6 +311,7 @@ export const stageHandlers = {
       if (dup) return { attempt: dup.attempt_no, late: !!dup.late, duplicate: true };
     }
     const row = (await targets('t.stage_id=? AND t.research_id=?', stage.id, r.id))[0] ?? fail(404, 'This stage is not assigned to your research');
+    if (await courseEnded(stage.course_id)) fail(409, ENDED);
     const denied = await mayStudentSubmit(user, r);
     if (denied) fail(403, denied);
     const replace = !!body.replace;

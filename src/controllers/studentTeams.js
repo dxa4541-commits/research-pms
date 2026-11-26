@@ -6,7 +6,7 @@ import { fail, need, str } from '../errors.js';
 import { notify } from '../notifications.js';
 import { audit } from '../audit.js';
 import {
-  getCourse, getTeam, activeMembers, addMember, removeMember, setLeader, isMember, isLeader, teamFor, enrolled, sizeOf,
+  getCourse, openCourse, getTeam, activeMembers, addMember, removeMember, setLeader, isMember, isLeader, teamFor, enrolled, sizeOf,
   teamLocked, history, notifyTeam, LOCK_MSG,
 } from '../teams.js';
 import { manageable, teamView } from './admin.js';
@@ -84,7 +84,7 @@ export const studentTeamHandlers = {
     return asyncMap(await db.prepare('SELECT t.* FROM team_members tm JOIN teams t ON t.id=tm.team_id WHERE tm.user_id=? AND tm.left_at IS NULL ORDER BY t.id DESC').all(user.id), t => myTeamDetail(user, t));
   },
   async createMyTeam({ user, body }) {
-    const course = await getCourse(Number(body.courseId));
+    const course = await openCourse(Number(body.courseId));
     if (!await enrolled(user.id, course.id)) fail(403, 'You are not enrolled in this course');
     if (course.team_mode === 'individual') fail(409, 'This course only allows individual research');
     const name = need(body.name, 'Team name', 100);
@@ -318,8 +318,9 @@ export const studentTeamHandlers = {
   // ---------- Student dashboard ----------
   async studentDashboard({ user }) {
     const teams = await asyncMap(await db.prepare('SELECT t.* FROM team_members tm JOIN teams t ON t.id=tm.team_id WHERE tm.user_id=? AND tm.left_at IS NULL ORDER BY t.id').all(user.id), t => myTeamDetail(user, t));
-    const courses = await db.prepare('SELECT c.* FROM courses c JOIN enrollments e ON e.course_id=c.id WHERE e.user_id=? ORDER BY c.name').all(user.id);
-    const researchRows = await db.prepare(`SELECT r.* FROM research r WHERE r.student_id=? OR r.team_id IN (SELECT team_id FROM team_members WHERE user_id=? AND left_at IS NULL) ORDER BY r.id DESC`).all(user.id, user.id);
+    const courses = await db.prepare('SELECT c.* FROM courses c JOIN enrollments e ON e.course_id=c.id WHERE e.user_id=? AND c.archived_at IS NULL ORDER BY c.name').all(user.id);
+    const researchRows = await db.prepare(`SELECT r.* FROM research r WHERE (r.student_id=? OR r.team_id IN (SELECT team_id FROM team_members WHERE user_id=? AND left_at IS NULL))
+      AND r.course_id NOT IN (SELECT id FROM courses WHERE archived_at IS NOT NULL) ORDER BY r.id DESC`).all(user.id, user.id);
     const reviews = db.prepare(`SELECT v.decision,v.comment,v.created_at,u.name AS reviewer FROM topic_reviews v JOIN users u ON u.id=v.reviewer_id WHERE v.research_id=? ORDER BY v.id DESC LIMIT 5`);
     const research = await asyncMap(researchRows, async r => {
       const st = await stageHandlers.researchStages({ user, params: { id: r.id } });
