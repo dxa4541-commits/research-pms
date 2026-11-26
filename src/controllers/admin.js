@@ -1,11 +1,12 @@
 // Teams (supervisor/admin side), courses, users and reports.
 import { db } from '../db.js';
-import { HttpError, fail, need } from '../errors.js';
+import { HttpError, fail, need, str } from '../errors.js';
 import { hashPassword } from '../auth.js';
 import { notify } from '../notifications.js';
 import { listFor } from '../research.js';
 import { audit } from '../audit.js';
 import { targets } from '../stages.js';
+import { stageHandlers } from './stages.js';
 import { getCourse, getTeam, activeMembers, addMember, removeMember, setLeader, isLeader, history, notifyTeam, coursesOf, teamIdsOf, teamLocked } from '../teams.js';
 
 const ROLES = ['student', 'supervisor', 'admin'];
@@ -85,8 +86,9 @@ export const adminHandlers = {
     return { leader_id: uid };
   },
   // Teams a supervisor manages: ones they created plus ones whose research is assigned to them. Admin sees all.
-  async listTeams({ user }) {
-    const where = user.role === 'admin' ? '' : ` WHERE t.created_by=? OR t.id IN (SELECT team_id FROM research WHERE supervisor_id=? AND team_id IS NOT NULL)`;
+  async listTeams({ user, query }) {
+    const ended = `t.course_id ${query?.get('archived') === '1' ? '' : 'NOT '}IN (SELECT id FROM courses WHERE archived_at IS NOT NULL)`;
+    const where = user.role === 'admin' ? ` WHERE ${ended}` : ` WHERE (t.created_by=? OR t.id IN (SELECT team_id FROM research WHERE supervisor_id=? AND team_id IS NOT NULL)) AND ${ended}`;
     const args = user.role === 'admin' ? [] : [user.id, user.id];
     const out = [];
     for (const t of await db.prepare(`SELECT t.* FROM teams t${where} ORDER BY t.id DESC`).all(...args)) out.push(await teamView(t));
@@ -109,8 +111,10 @@ export const adminHandlers = {
   },
 
   // Lookups. Students only see the courses they are enrolled in.
-  listCourses({ user }) {
-    return user.role === 'student' ? coursesOf(user.id) : db.prepare('SELECT * FROM courses ORDER BY name').all();
+  listCourses({ user, query }) {
+    // ended terms only on request (?all=1 — the admin's courses page); pickers never offer them
+    if (user.role === 'student') return coursesOf(user.id);
+    return db.prepare(`SELECT * FROM courses ${query?.get('all') === '1' ? '' : 'WHERE archived_at IS NULL'} ORDER BY archived_at IS NOT NULL, name`).all();
   },
   listSupervisors() { return db.prepare("SELECT id,name FROM users WHERE role='supervisor' AND active=1 ORDER BY name").all(); },
   async listStudents() {
@@ -130,6 +134,58 @@ export const adminHandlers = {
     } catch (e) { if (e instanceof HttpError) throw e; fail(409, 'Course already exists'); }
   },
   // Team rules of a course (supervisor or admin): mode, size limits, membership lock, ID privacy.
+  // ---------- End of term ----------
+  // What ending the term of a course would close (shown before the admin confirms).
+  async courseSummary({ params }) {
+    const c = await getCourse(Number(params.id));
+    const n = async sql => (await db.prepare(sql).get(c.id)).n;
+    return {
+      id: c.id, name: c.name, archived_at: c.archived_at,
+      research: await n('SELECT COUNT(*) AS n FROM research WHERE course_id=?'), teams: await n('SELECT COUNT(*) AS n FROM teams WHERE course_id=?'),
+      stages: await n('SELECT COUNT(*) AS n FROM stages WHERE course_id=?'), students: await n("SELECT COUNT(*) AS n FROM enrollments e JOIN users u ON u.id=e.user_id WHERE e.course_id=? AND u.role='student'"),
+      awaiting_review: await n(`SELECT COUNT(*) AS n FROM stage_submissions x JOIN stages s ON s.id=x.stage_id WHERE s.course_id=? AND x.status='submitted' AND x.replaced=0
+        AND x.attempt_no=(SELECT MAX(attempt_no) FROM stage_submissions y WHERE y.stage_id=x.stage_id AND y.research_id=x.research_id)`),
+      pending_topics: await n("SELECT COUNT(*) AS n FROM research WHERE course_id=? AND status IN ('pending','changes_requested')"),
+      ungraded_final: await n("SELECT COUNT(*) AS n FROM research r WHERE r.course_id=? AND r.status='approved' AND NOT EXISTS (SELECT 1 FROM research_grades g WHERE g.research_id=r.id)"),
+    };
+  },
+  // Ends the term: the course becomes read-only and leaves every list (its research, teams and stages stay readable
+  // under "archived"). label renames it (e.g. "Software Engineering (Fall 2026)"). next: { copyStages, shiftDays }
+  // opens a new course with the original name and rules, and copies every instructor's stages of the course into it.
+  async endTerm({ user, params, body }) {
+    const c = await getCourse(Number(params.id));
+    if (c.archived_at) fail(409, 'This term has already ended');
+    const label = body.label == null || body.label === '' ? null : (str(body.label, 40) ?? fail(400, 'Term label is too long (max 40 chars)'));
+    const archivedName = label ? `${c.name} (${label})` : c.name;
+    if (label && await db.prepare('SELECT 1 FROM courses WHERE name=? AND id<>?').get(archivedName, c.id)) fail(409, 'Course already exists');
+    if (body.next && !label) fail(400, 'Give the ended term a label so the new course can keep the name');
+    await db.prepare('UPDATE courses SET archived_at=utc_now(), name=? WHERE id=?').run(archivedName, c.id);
+    let next = null;
+    if (body.next) {
+      const id = (await db.prepare('INSERT INTO courses (name,team_mode,min_team_size,max_team_size,teams_locked,show_student_ids) VALUES (?,?,?,?,0,?)')
+        .run(c.name, c.team_mode, c.min_team_size, c.max_team_size, c.show_student_ids)).lastInsertRowid;
+      let copied = 0;
+      if (body.next.copyStages) {
+        const shift = body.next.shiftDays == null || body.next.shiftDays === '' ? 0 : Number(body.next.shiftDays);
+        if (!Number.isInteger(shift) || Math.abs(shift) > 730) fail(400, 'Shift must be a whole number of days (up to 730)');
+        for (const sup of await db.prepare('SELECT DISTINCT supervisor_id AS id FROM stages WHERE course_id=?').all(c.id)) {
+          const ids = (await db.prepare('SELECT id FROM stages WHERE course_id=? AND supervisor_id=? ORDER BY position, id').all(c.id, sup.id)).map(x => x.id);
+          copied += (await stageHandlers.copyStages({ user: { id: sup.id }, body: { stageIds: ids, courseId: id, shiftDays: shift } })).created;
+        }
+      }
+      next = { id, name: c.name, stages: copied };
+    }
+    await audit(user, 'course.term_ended', { detail: { course: c.id, name: archivedName, next } });
+    return { archived: { id: c.id, name: archivedName }, next };
+  },
+  // Reopens an ended term (e.g. ended by mistake). The name keeps its label.
+  async reopenTerm({ user, params }) {
+    const c = await getCourse(Number(params.id));
+    if (!c.archived_at) fail(409, 'This course is not archived');
+    await db.prepare('UPDATE courses SET archived_at=NULL WHERE id=?').run(c.id);
+    await audit(user, 'course.term_reopened', { detail: { course: c.id } });
+    return { ok: true };
+  },
   async updateCourseSettings({ user, params, body }) {
     const c = await getCourse(Number(params.id));
     await applySettings(c.id, body);

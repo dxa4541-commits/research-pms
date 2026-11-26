@@ -250,5 +250,37 @@ const rep3 = tl.find(x => x.name === 'Report');
 assert.deepEqual(rep3.files.map(f => f.filename), ['report.pdf', 'appendix.pdf']); ok('several files of one submission');
 assert.equal((await call('GET', `/stage-submission-files/${rep3.files[0].id}/file`, null, doc)).status, 200); ok('instructor downloads a file from the team card');
 
+// ---------- End of term ----------
+await is(call('POST', `/courses/${course.id}/end-term`, { label: 'Fall 2026' }, doc), 403, 'only the admin ends a term');
+const sum = (await is(call('GET', `/courses/${course.id}/summary`, null, admin), 200, 'admin sees what ending the term closes')).body;
+assert.ok(sum.research >= 2 && sum.teams >= 1 && sum.stages >= 3); ok('summary counts research, teams and stages');
+await is(call('POST', `/courses/${course.id}/end-term`, { next: { copyStages: true } }, admin), 400, 'a new term needs a label for the ended one');
+const docStages = (await call('GET', '/stages', null, doc)).body.filter(x => x.course_id === course.id).length;
+r = await is(call('POST', `/courses/${course.id}/end-term`, { label: 'Fall 2026', next: { copyStages: true, shiftDays: 120 } }, admin), 200, 'admin ends the term and starts a new one');
+assert.equal(r.body.archived.name, 'Software Engineering (Fall 2026)'); assert.equal(r.body.next.name, 'Software Engineering'); assert.equal(r.body.next.stages, docStages); ok('old course renamed with its label; new course keeps the name and gets the stages');
+const nextId = r.body.next.id;
+await is(call('POST', `/courses/${course.id}/end-term`, { label: 'x' }, admin), 409, 'a term cannot end twice');
+const cs = (await call('GET', '/courses', null, doc)).body;
+assert.ok(!cs.some(c => c.id === course.id) && cs.some(c => c.id === nextId)); ok('pickers offer the new course, not the ended one');
+assert.ok((await call('GET', '/courses?all=1', null, admin)).body.find(c => c.id === course.id).archived_at); ok('the admin still lists the ended term');
+assert.ok(!(await call('GET', '/research', null, doc)).body.some(x => x.id === rid)); ok('ended research leaves the lists');
+assert.ok((await call('GET', '/research?archived=1', null, doc)).body.some(x => x.id === rid)); ok('…and is shown with "archived"');
+const arch = (await is(call('GET', `/research/${rid}`, null, lead), 200, 'the team can still open its research')).body;
+assert.ok(arch.course_archived_at); ok('research says it is archived');
+assert.equal((await call('GET', `/stage-submission-files/${rep3.files[0].id}/file`, null, lead)).status, 200); ok('files stay downloadable');
+const anyStage = (await stagesOf(lead)).find(e => e.phase === 'active')?.stage.id ?? s1;
+await is(call('POST', `/stages/${anyStage}/submissions`, { researchId: rid, filename: 'x.pdf', data: pdf }, lead), 409, 'no submissions in an ended term');
+await is(call('POST', '/stages', { courseId: course.id, name: 'Late stage' }, doc), 409, 'no new stages in an ended course');
+await is(call('POST', '/research', { title: 'New', courseId: course.id, supervisorId: drSara.id }, solo), 409, 'no new topics in an ended course');
+await is(call('POST', `/research/${rid}/approve`, { decision: 'reject', comment: 'x' }, doc), 409, 'no decisions on proposals in an ended term');
+await is(call('PUT', `/research/${rid}/grade`, { score: 88 }, doc), 200, 'the instructor can still enter the final grade');
+assert.ok(!(await call('GET', '/stages', null, doc)).body.some(x => x.course_id === course.id)); assert.ok((await call('GET', '/stages?archived=1', null, doc)).body.some(x => x.course_id === course.id)); ok('stages of the ended term only under "archived"');
+assert.ok(!(await call('GET', '/teams', null, doc)).body.some(x => x.name === 'Owls')); assert.ok((await call('GET', '/teams?archived=1', null, doc)).body.some(x => x.name === 'Owls')); ok('teams of the ended term only under "archived"');
+assert.ok(!(await call('GET', '/supervisor/settings', null, doc)).body.not_started.length); ok('ended research is not offered a workflow start');
+const newStages = (await call('GET', '/stages', null, doc)).body.filter(x => x.course_id === nextId);
+assert.ok(newStages.length === docStages && newStages.every(x => x.state === 'scheduled' && x.counts.assigned === 0)); ok('the new term starts with fresh, unassigned stages');
+await is(call('POST', `/courses/${course.id}/reopen`, null, admin), 200, 'admin can reopen an ended term');
+assert.ok((await call('GET', '/research', null, doc)).body.some(x => x.id === rid)); ok('reopened research is listed again');
+
 console.log(`\nAll ${n} workflow checks passed`);
 server.close(); process.exit(0);

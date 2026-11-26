@@ -14,7 +14,7 @@ export async function addNoteToLatest(research, author, text) {
 
 export async function getResearch(id) {
   const r = await db.prepare(`
-    SELECT r.*, c.name AS course, s.name AS student, s.email AS student_email, v.name AS supervisor, t.name AS team
+    SELECT r.*, c.name AS course, c.archived_at AS course_archived_at, s.name AS student, s.email AS student_email, v.name AS supervisor, t.name AS team
     FROM research r JOIN courses c ON c.id=r.course_id
     JOIN users s ON s.id=r.student_id JOIN users v ON v.id=r.supervisor_id
     LEFT JOIN teams t ON t.id=r.team_id WHERE r.id=?`).get(id);
@@ -42,6 +42,8 @@ export async function listFor(user, opts = {}) {
     where.push('(r.student_id=? OR r.team_id IN (SELECT team_id FROM team_members WHERE user_id=? AND left_at IS NULL))'); args.push(user.id, user.id);
   }
   if (opts.status) { where.push('r.status=?'); args.push(opts.status); }
+  // research of ended terms is listed only on request (opts.archived)
+  where.push(`r.course_id ${opts.archived ? '' : 'NOT '}IN (SELECT id FROM courses WHERE archived_at IS NOT NULL)`);
   if (opts.q) { where.push("r.title ILIKE ? ESCAPE '\\'"); args.push('%' + opts.q.replace(/[\\%_]/g, '\\$&') + '%'); }
   const w = where.length ? ' WHERE ' + where.join(' AND ') : '';
   const total = (await db.prepare('SELECT COUNT(*) AS n FROM research r' + w).get(...args)).n;

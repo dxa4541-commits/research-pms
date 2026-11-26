@@ -47,6 +47,9 @@ const routes = [
   ['GET', '/api/membership-requests', 'listChangeRequests', [V, A]],
   ['POST', '/api/membership-requests/:id/decide', 'decideChangeRequest', [V, A]],
   ['PUT', '/api/courses/:id/settings', 'updateCourseSettings', [V, A]],
+  ['GET', '/api/courses/:id/summary', 'courseSummary', [A]],
+  ['POST', '/api/courses/:id/end-term', 'endTerm', [A]],
+  ['POST', '/api/courses/:id/reopen', 'reopenTerm', [A]],
   // Registration (admin)
   ['GET', '/api/registrations', 'listRegistrations', [A]],
   ['POST', '/api/registrations/:id/approve', 'approveRegistration', [A]],

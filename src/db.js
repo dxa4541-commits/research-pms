@@ -372,6 +372,7 @@ CREATE TABLE IF NOT EXISTS stage_submission_files (
 );
 -- Added columns (existing rows keep their old behaviour: every target 'active', one file, replacement allowed).
 ALTER TABLE research ADD COLUMN IF NOT EXISTS workflow_started_at TEXT;
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS archived_at TEXT;               -- term ended: read-only, hidden from lists
 ALTER TABLE stages ADD COLUMN IF NOT EXISTS duration_days INTEGER;            -- deadline = activation + N days (per research)
 ALTER TABLE stages ADD COLUMN IF NOT EXISTS max_files INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE stages ADD COLUMN IF NOT EXISTS allow_replace INTEGER NOT NULL DEFAULT 1; -- replace a submission before review/deadline

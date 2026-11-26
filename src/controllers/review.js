@@ -4,12 +4,14 @@ import { fail, str, need } from '../errors.js';
 import { notifyParties } from '../notifications.js';
 import { updateStatus, addNoteToLatest, accessible, own } from '../research.js';
 import { startWorkflow } from '../workflow.js';
+import { courseEnded, ENDED } from '../teams.js';
 import { audit } from '../audit.js';
 
 export const reviewHandlers = {
   // Supervisor: Approve / reject proposal (a rejection needs a reason)
   async approve({ user, params, body }) {
     const r = own(await accessible(user, Number(params.id)), user);
+    if (await courseEnded(r.course_id)) fail(409, ENDED);
     const status = { approve: 'approved', reject: 'rejected' }[body.decision] ?? fail(400, 'decision must be approve or reject');
     const comment = str(body.comment, 1000);
     if (status === 'rejected' && !comment) fail(400, 'A rejection reason is required');
@@ -26,6 +28,7 @@ export const reviewHandlers = {
   // Supervisor: Request changes («extend» of Approve / reject proposal)
   async requestChanges({ user, params, body }) {
     const r = own(await accessible(user, Number(params.id)), user);
+    if (await courseEnded(r.course_id)) fail(409, ENDED);
     const comment = str(body.comment, 1000) ?? fail(400, 'Please describe the requested changes');
     await updateStatus(r, 'changes_requested');
     await addNoteToLatest(r, user, comment);

@@ -13,7 +13,8 @@ export function checkDeadlines() {
     const now = today(), soon = addDays(now, WARN_DAYS);
     // every research that is working on a stage right now (opened for everyone, or activated for it by the workflow)
     const rows = (await targets(`t.phase='active' AND COALESCE(t.due_date, st.deadline) IS NOT NULL AND ((t.activated_at IS NOT NULL AND st.state NOT IN ('closed','postponed'))
-      OR (st.state='open' AND (st.start_date IS NULL OR st.start_date<=utc_today())))`)).filter(r => r.missing);
+      OR (st.state='open' AND (st.start_date IS NULL OR st.start_date<=utc_today())))
+      AND st.course_id NOT IN (SELECT id FROM courses WHERE archived_at IS NOT NULL)`)).filter(r => r.missing);
     const mark = db.prepare('INSERT INTO deadline_events (stage_id,research_id,kind,deadline) VALUES (?,?,?,?) ON CONFLICT DO NOTHING');
     let sent = 0;
     for (const r of rows) {

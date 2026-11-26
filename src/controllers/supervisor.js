@@ -11,7 +11,7 @@ const pct = (a, b) => b ? Math.round(a / b * 1000) / 10 : null;
 
 async function overview(supId) {
   const research = await listFor({ role: 'supervisor', id: supId });
-  const rows = await targets('st.supervisor_id=?', supId);
+  const rows = await targets('st.supervisor_id=? AND st.course_id NOT IN (SELECT id FROM courses WHERE archived_at IS NOT NULL)', supId);
   return { research, rows };
 }
 
