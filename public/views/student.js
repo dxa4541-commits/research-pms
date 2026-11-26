@@ -3,6 +3,7 @@ import { $, esc, t, badge, fmtDate, fmtDay, state, api, act, toast, render, noti
 import { icon, avatar, statCard, num, progress, remBadge, remaining, pageHeader, empty, setCrumbs, confirmDialog, askText, go } from '../ui.js';
 import { renderResearchStages, tlState, stateBadge } from './stages.js';
 import { notifMeta } from './notifications.js';
+import { proposalTracker } from './research.js';
 
 const dsb = s => `<span class="badge ${s}">${t('ds.' + s)}</span>`;
 const ist = s => `<span class="badge ${s === 'accepted' || s === 'approved' ? 'approved' : s === 'rejected' ? 'rejected' : s === 'cancelled' ? 'closed' : 'pending'}">${t('ist_' + s)}</span>`;
@@ -22,7 +23,7 @@ export function buildTasks(d) {
       if (ds === 'approved') tasks.push({ ...base, title: t('tk.done', { s: s.stage.name }), who: '', priority: 'low', status: 'done', progress: 100, tone: 'ok', ic: 'checkc' });
       else if (['submitted', 'under_review', 'resubmitted'].includes(ds)) tasks.push({ ...base, title: t('tk.waitReview', { s: s.stage.name }), who: t('tk.supervisor'), priority: 'low', status: 'review', progress: 60, tone: '', ic: 'clock' });
       else if (ds === 'changes_requested' || ds === 'open') tasks.push({ ...base, title: t(ds === 'open' ? 'tk.submit' : 'tk.resubmit', { s: s.stage.name }), who: s.can_submit ? t('tk.you') : t('tk.leader'), priority: s.late ? 'high' : prio(s.stage.deadline), status: s.can_submit ? 'todo' : 'waiting', progress: ds === 'open' ? 0 : 30, tone: s.late ? 'bad' : ds === 'open' ? 'teal' : 'warn', ic: ds === 'open' ? 'upload' : 'edit', overdue: s.late });
-      else if (ds === 'not_started') tasks.push({ ...base, title: t('tk.upcoming', { s: s.stage.name }), who: '', priority: 'low', status: 'upcoming', progress: 0, tone: '', ic: 'calendar' });
+      else if (ds === 'not_started' || ds === 'locked') tasks.push({ ...base, title: t('tk.upcoming', { s: s.stage.name }), who: '', priority: 'low', status: 'upcoming', progress: 0, tone: '', ic: 'calendar' });
     }
   }
   for (const i of d.invitations) tasks.push({ id: `i${i.id}`, title: t('tk.invite', { team: i.team }), desc: `${i.course} · ${t('invitedBy')} ${i.invited_by}`, who: t('tk.you'), due: null, priority: 'medium', status: 'todo', progress: 0, tone: 'teal', ic: 'users', go: () => go('myTeam') });
@@ -45,7 +46,7 @@ export async function renderStudentDashboard(view) {
   const d = await api('GET', '/student/dashboard');
   const tasks = buildTasks(d), action = tasks.filter(k => k.status === 'todo');
   const r = d.research.find(x => x.status === 'approved') ?? d.research[0];
-  const cur = r?.stages.find(e => !['done', 'closed'].includes(tlState(e)));
+  const cur = r?.stages.find(e => !['done', 'closed', 'locked'].includes(tlState(e)));
   const team = d.teams[0];
   const firstName = d.student.name.split(' ')[0];
   const top = action[0];
@@ -65,6 +66,8 @@ export async function renderStudentDashboard(view) {
           ${cur ? `<div class="tl-next" style="margin-top:14px">${icon('layers')}<span><b>${t('rd.currentStage')}:</b> ${esc(cur.stage.name)} ${dsb(cur.display_status)} ${cur.stage.deadline ? '· ' + remBadge(cur.stage.deadline) : ''}</span></div>` : ''}
           <div class="row" style="margin-top:14px"><button id="openR">${t('sdOpen')} ${icon('arrow')}</button><button class="ghost" id="openS">${icon('layers')} ${t('nav.stages')}</button></div>`
           : empty({ ic: 'book', title: t('sdResearch'), text: t('sdNoResearch'), action: `<button data-go="myTeam">${t('sdGoTeam')}</button> <button class="ghost" data-go="topic">${t('sdGoTopic')}</button>` })}</section>
+      ${r ? (r.status === 'approved' ? stageBoard(r, cur) : `<section class="card"><div class="card-h"><h3>${icon('send')} ${t('pt.title')}</h3><span class="tiny mute">${icon('refresh')} ${t('pt.live')}</span></div>${proposalTracker(r)}
+        ${r.topic_feedback?.[0]?.comment ? `<div class="note"><span class="small mute">${esc(r.topic_feedback[0].reviewer)} · ${fmtDate(r.topic_feedback[0].created_at)}</span><p>${esc(r.topic_feedback[0].comment)}</p></div>` : ''}</section>`) : ''}
       <section class="card"><div class="card-h"><h3>${icon('tasks')} ${t('nav.tasks')}</h3><button class="link" data-go="tasks">${t('viewAll')}</button></div>${tasks.filter(k => k.status !== 'done').slice(0, 4).map(taskRow).join('') || `<p class="mute small">${t('tk.none')}</p>`}</section>
       <section class="card"><div class="card-h"><h3>${icon('calendar')} ${t('sdDeadlines')}</h3></div>${d.upcoming.length ? d.upcoming.slice(0, 5).map(u => `<div class="todo"><span class="ic warn">${icon('flag')}</span><div class="t"><b>${esc(u.stage)}</b><span class="small mute">${esc(u.research)}</span></div><div class="row"><span class="small">${fmtDay(u.deadline)}</span>${remBadge(u.deadline)}</div></div>`).join('') : `<p class="mute small">${t('sdNoDeadlines')}</p>`}</section>
     </div><div class="stack">
@@ -84,6 +87,29 @@ export async function renderStudentDashboard(view) {
   $('#topAct')?.addEventListener('click', () => top.go());
   $('#openR')?.addEventListener('click', () => openResearch(r.id));
   $('#openS')?.addEventListener('click', () => { state.tab = 'stagesS'; state.sRes = r.id; render(); });
+  view.querySelectorAll('[data-gostage]').forEach(b => b.onclick = () => { state.tab = 'stagesS'; state.sRes = r.id; state.stOpen?.add(`${r.id}:${b.dataset.gostage}`); render(); });
+}
+
+// The research's stages at a glance: the current stage in full, then what is done and what comes next.
+function stageBoard(r, cur) {
+  const done = r.stages.filter(e => ['done', 'closed'].includes(tlState(e)) || ['completed', 'closed'].includes(e.phase));
+  const next = r.stages.filter(e => e !== cur && !done.includes(e));
+  const subs = cur?.submissions ?? [];
+  const feedback = subs.flatMap(x => x.reviews).filter(v => v.comment).at(-1);
+  const line = (e, extra = '') => `<div class="todo" style="cursor:pointer" data-gostage="${e.stage.id}"><span class="ic ${tlState(e) === 'done' ? 'ok' : tlState(e) === 'locked' ? '' : 'warn'}">${icon(tlState(e) === 'done' ? 'checkc' : tlState(e) === 'locked' ? 'lock' : 'layers')}</span>
+    <div class="t"><b>${esc(e.stage.name)}</b><span class="tiny mute">${extra}</span></div>${dsb(e.display_status)}</div>`;
+  return `<section class="card"><div class="card-h"><h3>${icon('layers')} ${t('sdw.current')}</h3>${cur ? dsb(cur.display_status) : ''}</div>
+    ${cur ? `<h4 style="margin:0 0 4px">${esc(cur.stage.name)}</h4>${cur.stage.description ? `<p class="small">${esc(cur.stage.description)}</p>` : ''}
+      <div class="tl-meta"><span>${icon('flag')} ${t('deadlineShort')}: ${cur.stage.deadline ? fmtDay(cur.stage.deadline) : '—'}</span>${cur.stage.deadline ? remBadge(cur.stage.deadline) : ''}<span>${icon('award')} ${t('maxGrade')}: ${num(cur.stage.max_grade)}</span>
+        <span>${icon('upload')} ${t('limits', { f: cur.stage.formats.join(', '), mb: num(cur.stage.max_file_mb) })}${(cur.stage.max_files ?? 1) > 1 ? ' · ' + t('sb.max', { n: cur.stage.max_files }) : ''}</span></div>
+      ${cur.stage.instructions ? `<div class="note"><span class="small"><b>${t('sdw.instructions')}</b></span><p>${esc(cur.stage.instructions)}</p></div>` : ''}
+      ${feedback ? `<div class="note"><span class="small"><b>${t('sdw.lastFeedback')}</b> · <span class="mute">${esc(feedback.reviewer)} · ${fmtDate(feedback.created_at)}</span></span><p>${esc(feedback.comment)}</p></div>` : ''}
+      ${cur.grade ? `<p class="small">${icon('award')} ${t('stageGrade')}: <b>${num(cur.grade.score)}/${num(cur.stage.max_grade)}</b></p>` : ''}
+      ${subs.length ? `<p class="small" style="margin-bottom:4px"><b>${t('sdw.history')}</b></p>${subs.slice(0, 3).map(x => `<div class="row small" style="gap:8px"><span>${t('attempt')} ${x.attempt_no}</span><span class="mute">${fmtDate(x.created_at)}</span>${x.replaced ? `<span class="badge closed">${t('sb.replaced')}</span>` : badge(x.status)}</div>`).join('')}` : ''}
+      <p style="margin-top:12px"><button data-gostage="${cur.stage.id}">${cur.can_submit || cur.can_replace ? icon('upload') : icon('arrow')} ${cur.can_submit ? t('sdw.submitNow') : t('rd.openStages')}</button></p>`
+      : `<p class="mute small">${r.stages.length ? t('sdw.allDone') : t('sdw.waitApproval')}</p>`}
+    <div class="grid g2" style="margin-top:12px"><div><h4>${t('sdw.previous')}</h4>${done.length ? done.map(e => line(e, e.grade ? `${t('grade')}: ${num(e.grade.score)}/${num(e.stage.max_grade)}` : e.completed_at ? fmtDate(e.completed_at) : '')).join('') : `<p class="small mute">${t('sdw.noPrev')}</p>`}</div>
+      <div><h4>${t('sdw.upcoming')}</h4>${next.length ? next.map(e => line(e, tlState(e) === 'locked' ? t('tl.locked') : e.stage.deadline ? fmtDay(e.stage.deadline) : '')).join('') : `<p class="small mute">${t('sdw.noUp')}</p>`}</div></div></section>`;
 }
 
 // ---------- Tasks page ----------

@@ -3,7 +3,8 @@ import { db } from '../db.js';
 import { fail, str, need, intParam } from '../errors.js';
 import { checkFile, createSubmission, readStored } from '../files.js';
 import { audit } from '../audit.js';
-import { enrolled, teamFor, isLeader, sizeOf } from '../teams.js';
+import { enrolled, teamFor, isLeader, sizeOf, getTeam } from '../teams.js';
+import { studentTeamHandlers } from './studentTeams.js';
 import { stageTotals } from '../stages.js';
 import { notify, notifySupervisor } from '../notifications.js';
 import { updateStatus, getResearch, accessible, listFor, STATUSES, MAX_PAGE } from '../research.js';
@@ -11,15 +12,26 @@ import { updateStatus, getResearch, accessible, listFor, STATUSES, MAX_PAGE } fr
 export const researchHandlers = {
   // Student: Register research topic. A student in a team of the course registers for the team (leader only);
   // otherwise it is an individual project, if the course allows it. One active research per team/student per course.
+  // body.newTeam = { name, memberIds } creates a group project in one step: a new team led by the student, with an
+  // invitation to each chosen classmate (they join when they accept; invited members count towards the minimum size).
   async registerTopic({ user, body }) {
     const title = need(body.title, 'Title', 200);
     const course = (await db.prepare('SELECT * FROM courses WHERE id=?').get(Number(body.courseId))) ?? fail(400, 'Choose a valid course');
     if (!await enrolled(user.id, course.id)) fail(403, 'You are not enrolled in this course');
     const sup = (await db.prepare("SELECT id FROM users WHERE id=? AND role='supervisor' AND active=1").get(Number(body.supervisorId))) ?? fail(400, 'Choose a valid supervisor');
-    const team = (await teamFor(user.id, course.id)) ?? null;
+    let team = (await teamFor(user.id, course.id)) ?? null, invited = 0;
+    if (!team && body.newTeam) {
+      need(body.title, 'Title', 200);
+      const ids = Array.isArray(body.newTeam.memberIds) ? [...new Set(body.newTeam.memberIds.map(Number))] : [];
+      if (!ids.length) fail(400, 'Choose at least one team member');
+      if (ids.length + 1 > course.max_team_size) fail(409, `A team can have at most ${course.max_team_size} members`);
+      const { id } = await studentTeamHandlers.createMyTeam({ user, body: { courseId: course.id, name: body.newTeam.name, idea: str(body.title, 200) } });
+      for (const uid of ids) await studentTeamHandlers.inviteStudent({ user, params: { id }, body: { userId: uid } });
+      team = await getTeam(id); invited = ids.length;
+    }
     if (team) {
       if (!await isLeader(user.id, team.id)) fail(403, 'Only the team leader can register the research topic');
-      const size = await sizeOf(team.id);
+      const size = await sizeOf(team.id) + invited;
       if (size < course.min_team_size) fail(409, `The team needs at least ${course.min_team_size} members before registering a topic`);
       if (await db.prepare("SELECT 1 FROM research WHERE team_id=? AND status<>'rejected'").get(team.id)) fail(409, 'Your team already has a research project');
     } else {
@@ -36,8 +48,8 @@ export const researchHandlers = {
     const id = r.lastInsertRowid;
     if (file) await createSubmission(id, 1, body.filename, file.buf);
     await notify(sup.id, 'n.submitted', { student: team ? team.name : user.name, title }, id);
-    await audit(user, 'topic.registered', { researchId: id, detail: { team: team?.id ?? null, title } });
-    return { id };
+    await audit(user, 'topic.registered', { researchId: id, detail: { team: team?.id ?? null, title, invited } });
+    return { id, team_id: team?.id ?? null, invited };
   },
   // Leader / owner: edit and resubmit a topic after the supervisor asked for changes (approved topics are frozen).
   async editTopic({ user, params, body }) {

@@ -24,6 +24,16 @@ Details and mapping to code: [docs/SUPERVISOR_REQUIREMENTS.md](docs/SUPERVISOR_R
 Approved University IDs for trying the registration flow (non-production): `20240003` … `20240008`
 (register → the admin approves under **Registrations** → first login with password = the ID → forced password change).
 
+## Research workflow (automatic) / سير عمل البحث التلقائي
+1. **Proposal** — the student submits a title and description, individually or as a team (a new team can be created in the same form by selecting classmates; they receive invitations). The proposal status is tracked live (Submitted → Instructor review → Approved / Revision requested / Rejected → Stages started).
+2. **Review** — the instructor approves, requests a revision (feedback required) or rejects (reason required). Every action is in the research activity history.
+3. **Automatic start** — on approval every stage the instructor defined for the course is queued for the research in order; the first one becomes **active** (even while the stage itself is still "scheduled"), gets its own deadline (`duration_days` after activation, or the stage's fixed deadline) and the whole team is notified. No manual assignment from *Students and teams* is needed. Setting: *Settings → Research workflow → "Automatically assign the first research stage when a research proposal is approved"* (on by default).
+4. **Submission** — one or more files (per-stage limit), an optional note, preview/remove before sending, confirmation, duplicate protection (`clientToken`), replacement before review and deadline (old version kept).
+5. **Evaluation** — *Approve* (optional grade + feedback) completes the stage and activates the next one; *Request revision* keeps the stage active and always allows a new attempt; *Reject* follows the instructor's rejection policy: `resubmit` (stage stays active, attempt rules apply), `stop` (stage closed for the research; ＋1 reopens it) or `advance` (move on to the next stage).
+6. **Completion** — when the last stage is approved the team and the instructor are notified.
+
+Model: `stage_targets.phase` = `locked | active | completed | closed`, per-research `due_date`; logic in `src/workflow.js`; tests in `test/workflow.test.js`.
+
 ## Use cases → where they live
 | Use case | Actor | Endpoint / controller fn |
 |---|---|---|
@@ -48,7 +58,8 @@ Approved University IDs for trying the registration flow (non-production): `2024
 | Set deadlines / identify overdue research (FR9) | admin | `PUT /api/research/:id/deadline` → `setDeadline`; `overdue` flag in lists & reports |
 | View my students and their research (FR8) | supervisor | «My students» tab |
 | Custom stages: create/edit/delete, assign, open/close/postpone, reorder | supervisor | `/api/stages…` → `src/controllers/stages.js` |
-| Submit a stage (per-stage formats/size/attempts) | student | `POST /api/stages/:id/submissions` → `submitStage` |
+| Submit a stage (per-stage formats/size/attempts, several files, replace) | student | `POST /api/stages/:id/submissions` → `submitStage` |
+| Workflow settings (automatic first stage, rejection policy) | supervisor | `GET/PUT /api/supervisor/settings` |
 | Review stage submission, stage grading (rubric), allow resubmission | supervisor | `POST /api/stage-submissions/:id/review`, `PUT /api/stages/:id/targets/:rid/grade` |
 | Team management (members, leader) | supervisor/admin | `PUT /api/teams/:id/members`, `PUT /api/teams/:id/leader` |
 | Private team messaging, announcements, reminders | supervisor/student | `/api/messages…` → `src/controllers/messages.js` |

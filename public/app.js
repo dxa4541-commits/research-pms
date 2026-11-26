@@ -147,3 +147,24 @@ async function render() {
 
 setRender(render);
 render();
+
+// Live updates: every 20 s (while the tab is visible) look for new notifications. A new one is shown as a toast and
+// the current screen is refreshed in place, unless the user is in the middle of typing or choosing files.
+let lastNotif = null;
+const busy = () => {
+  const v = $('#view'); if (!v) return true;
+  if (v.contains(document.activeElement) && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return true;
+  if (document.querySelector('.modal-back, [data-dd][aria-expanded="true"]')) return true;
+  if (v.querySelector('[data-flist] .dz-file, .dz-sel .dz-file')) return true;
+  return [...v.querySelectorAll('textarea, input:not([type]), input[type=text], input[type=number]')].some(i => i.value && i.value !== i.defaultValue);
+};
+setInterval(async () => {
+  if (!state.user || state.user.must_change_password || document.hidden) return;
+  const list = await api('GET', '/notifications').catch(() => null);
+  if (!list) return;
+  const top = list[0]?.id ?? 0;
+  if (lastNotif === null || top <= lastNotif) { lastNotif = Math.max(lastNotif ?? 0, top); return; }
+  lastNotif = top;
+  toast(notifText(list[0].message));
+  if (!busy()) render(); else { state.notifs = list; }
+}, 20000);

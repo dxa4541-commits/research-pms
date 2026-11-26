@@ -109,6 +109,7 @@ function overview(pane, { r, stagesData, teamInfo, role, done, total }) {
 function topic(pane, { r, role, id }) {
   const mayEdit = r.can_edit_topic, mayUpload = isStudent() && r.is_leader && r.status !== 'rejected';
   pane.innerHTML = `<div class="grid g-main"><div class="stack">
+    <section class="card"><div class="card-h"><h3>${t('pt.title')}</h3><span class="tiny mute">${icon('refresh')} ${t('pt.live')}</span></div>${proposalTracker(r, { started: !!r.workflow_started_at })}</section>
     <section class="card"><div class="card-h"><h3>${t('rd.topic')}</h3>${badge(r.status)}</div><h4 style="margin-bottom:2px">${esc(r.title)}</h4>
       <p>${r.description ? esc(r.description) : `<span class="mute">${t('rd.noDesc')}</span>`}</p>
       ${r.problem ? `<h4>${t('problemL')}</h4><p>${esc(r.problem)}</p>` : ''}${r.objectives ? `<h4>${t('objectivesL')}</h4><p>${esc(r.objectives)}</p>` : ''}
@@ -132,9 +133,13 @@ function topic(pane, { r, role, id }) {
     const d = b.dataset.d, comment = $('#cm').value.trim();
     if (d !== 'approve' && !comment) { $('#cm').focus(); throw new Error(t('rejectHint')); }
     if (!await confirmDialog({ title: t('cf.t.' + d), text: t('cf.t.text', { n: r.title }), confirm: t('cf.t.' + d + '.btn'), tone: d === 'approve' ? 'ok' : d === 'reject' ? 'bad' : 'warn' })) return;
-    if (d === 'request_changes') await api('POST', `/research/${id}/request-changes`, { comment }); else await api('POST', `/research/${id}/approve`, { decision: d, comment });
+    if (d === 'request_changes') { await api('POST', `/research/${id}/request-changes`, { comment }); toast(t('toast.decision')); }
+    else {
+      const res = await api('POST', `/research/${id}/approve`, { decision: d, comment });
+      toast(res.workflow?.first ? t('toast.workflowStarted', { s: res.workflow.first }) : res.workflow?.started ? t('toast.noStagesYet') : t('toast.decision'));
+    }
     render();
-  }, 'toast.decision'));
+  }));
   pane.querySelectorAll('[data-addnote]').forEach(b => b.onclick = act(async () => {
     await api('POST', `/submissions/${b.dataset.addnote}/notes`, { text: pane.querySelector(`[data-note="${b.dataset.addnote}"]`).value }); render();
   }, 'toast.note'));
@@ -246,7 +251,18 @@ async function activity(pane, { r, stagesData, id, role }) {
   pane.innerHTML = `<section class="card"><div class="card-h"><h3>${t('rd.activity')}</h3></div>${items.length ? items.map(i => `<div class="todo"><span class="ic">${icon(i.ic)}</span><div class="t"><b>${i.detail !== undefined ? `<code>${esc(i.text)}</code>` : esc(i.text)}</b><span class="tiny mute">${esc(i.who ?? '—')} · ${fmtDate(i.at)}</span>${i.detail ? `<span class="tiny mute" dir="ltr">${esc(JSON.stringify(i.detail)).slice(0, 160)}</span>` : ''}</div></div>`).join('') : empty({ ic: 'clock', title: t('noHistory') })}</section>`;
 }
 
-// ---------- Student: register a research topic ----------
+// ---------- Proposal status tracker (student dashboard and the topic tab) ----------
+// Submitted → Instructor review → Approved / Revision requested / Rejected → Stages started
+export function proposalTracker(r, { started = false } = {}) {
+  const s = r.status;
+  const mid = s === 'rejected' ? ['rejected', 'xc'] : s === 'changes_requested' ? ['revision', 'edit'] : ['approved', 'checkc'];
+  const steps = [['submitted', 'send', 'done'], ['review', 'inbox', s === 'pending' ? 'current' : 'done'], [mid[0], mid[1], s === 'pending' ? 'upnext' : s === 'approved' ? 'done' : s === 'rejected' ? 'bad' : 'current']];
+  if (s !== 'rejected') steps.push(['workflow', 'layers', started ? 'done' : 'upnext']);
+  return `<div class="ptrack" role="list" aria-label="${t('pt.title')}">${steps.map(([k, ic, st]) => `<div class="ptrack-step ${st}" role="listitem" ${st === 'current' ? 'aria-current="step"' : ''}><span class="ptrack-dot">${icon(ic)}</span><span class="small">${t('pt.' + k)}</span></div>`).join('')}</div>
+    <p class="small mute" style="margin:8px 0 0">${t('pt.d.' + s)}</p>`;
+}
+
+// ---------- Student: register a research topic (individual, existing team, or a new team with chosen members) ----------
 export async function renderSubmit(view) {
   const [courses, sups, teams] = await Promise.all([api('GET', '/courses'), api('GET', '/supervisors'), api('GET', '/my/teams')]);
   setCrumbs([{ label: t('nav.myResearch'), go: () => go('myResearch') }, { label: t('nav.topic') }]);
@@ -260,23 +276,48 @@ export async function renderSubmit(view) {
     <label for="s">${t('supervisor')}</label><select id="s">${courseOpts(sups)}</select>
     <label>${t('topicFile')}</label>${dropzoneHtml('t', { formats: ['pdf', 'doc', 'docx'], maxMb: 10 })}
     <p style="margin-top:14px"><button type="submit" id="go">${icon('send')} ${t('submit')}</button></p></form>
-    <aside class="card"><h3>${t('topic.tipsT')}</h3><ul class="small mute" style="padding-inline-start:18px"><li>${t('topic.tip1')}</li><li>${t('topic.tip2')}</li><li>${t('topic.tip3')}</li></ul></aside></div>`;
+    <aside class="card"><h3>${t('topic.tipsT')}</h3><ul class="small mute" style="padding-inline-start:18px"><li>${t('topic.tip1')}</li><li>${t('topic.tip2')}</li><li>${t('topic.tip3')}</li><li>${t('ws.autoHint')}</li></ul></aside></div>`;
   const dz = bindDropzone(view, 't', { formats: ['pdf', 'doc', 'docx'], maxMb: 10 });
-  const who = () => {
-    const team = teams.find(x => x.course_id === Number($('#c').value));
-    $('#who').innerHTML = team ? `<div class="alert ${team.my_role === 'leader' ? '' : 'warn'}">${icon('users')}<p><b>${t('yourTeamFor', { team: esc(team.name) })}</b>${team.my_role === 'leader' ? '' : `<br>${t('onlyLeaderTopic')}`}</p></div>`
-      : `<div class="alert">${icon('user')}<p>${t('individualFor')} — ${t('noTeamWarn')}</p></div>`;
-    $('#go').disabled = !!team && team.my_role !== 'leader';
+  let kind = 'individual';
+  const who = async () => {
+    const course = courses.find(c => c.id === Number($('#c').value));
+    const team = teams.find(x => x.course_id === course.id);
+    $('#go').disabled = false;
+    if (team) {
+      kind = 'existing';
+      $('#who').innerHTML = `<div class="alert ${team.my_role === 'leader' ? '' : 'warn'}">${icon('users')}<p><b>${t('yourTeamFor', { team: esc(team.name) })}</b>${team.my_role === 'leader' ? '' : `<br>${t('onlyLeaderTopic')}`}</p></div>`;
+      $('#go').disabled = team.my_role !== 'leader';
+      return;
+    }
+    const modes = course.team_mode === 'team' ? ['team'] : course.team_mode === 'individual' ? ['individual'] : ['individual', 'team'];
+    if (!modes.includes(kind)) kind = modes[0];
+    const avail = modes.includes('team') ? await api('GET', `/available-students?courseId=${course.id}`).catch(() => []) : [];
+    $('#who').innerHTML = `${modes.length > 1 ? `<span class="small"><b>${t('pf.kind')}</b></span><div class="chips" role="radiogroup" aria-label="${t('pf.kind')}" style="margin:6px 0 8px">${modes.map(m => `<button type="button" role="radio" aria-checked="${kind === m}" class="${kind === m ? 'on' : ''}" data-kind="${m}">${icon(m === 'team' ? 'users' : 'user')} ${t('pf.' + m)}</button>`).join('')}</div>` : ''}
+      ${kind === 'team' ? `<div class="gradebox"><label for="tn">${t('pf.teamName')}</label><input id="tn" maxlength="100" required>
+        <label>${t('pf.members')} <span class="mute small">— ${t('pf.maxMembers', { n: course.max_team_size })}</span></label>
+        ${avail.length ? `<div class="checks" id="tm">${avail.map(u => `<label><input type="checkbox" value="${u.id}"> ${esc(u.name)}${u.university_id ? ` <span class="mute small" dir="ltr">${esc(u.university_id)}</span>` : ''}</label>`).join('')}</div>` : `<p class="small mute">${t('pf.noAvail')}</p>`}
+        <p class="hint">${t('pf.membersHint')}</p></div>` : `<div class="alert">${icon('user')}<p>${t('individualFor')}</p></div>`}`;
+    view.querySelectorAll('[data-kind]').forEach(b => b.onclick = () => { kind = b.dataset.kind; who(); });
+    const boxes = [...view.querySelectorAll('#tm input')];
+    boxes.forEach(x => x.onchange = () => { const n = boxes.filter(y => y.checked).length; boxes.forEach(y => { y.disabled = !y.checked && n + 1 >= course.max_team_size; }); });
   };
-  $('#c').onchange = who; who();
+  $('#c').onchange = () => { kind = 'individual'; who(); }; await who();
   $('#f').onsubmit = act(async e => {
     e.preventDefault();
     const f = dz.file();
     const body = { title: $('#t').value, description: $('#ds').value, problem: $('#pb').value, objectives: $('#ob').value, courseId: $('#c').value, supervisorId: $('#s').value };
+    if (kind === 'team') {
+      const memberIds = [...view.querySelectorAll('#tm input:checked')].map(i => Number(i.value));
+      if (!memberIds.length) throw new Error(t('pf.pickOne'));
+      body.newTeam = { name: $('#tn').value, memberIds };
+    }
     if (f) Object.assign(body, { filename: f.name, data: await readFile(f) });
     $('#go').disabled = true;
-    try { const r = await apiUpload('POST', '/research', body, dz.progress); toast(t('toast.research')); state.tab = 'myResearch'; state.openId = r.id; state.researchTab = null; render(); }
-    finally { if ($('#go')) $('#go').disabled = false; }
+    try {
+      const r = await apiUpload('POST', '/research', body, dz.progress);
+      toast(r.invited ? t('toast.researchTeam', { n: r.invited }) : t('toast.research'));
+      state.tab = 'myResearch'; state.openId = r.id; state.researchTab = 'topic'; render();
+    } finally { if ($('#go')) $('#go').disabled = false; }
   });
 }
 

@@ -31,6 +31,8 @@ const day = off => new Date(Date.now() + off * 86400000).toISOString().slice(0, 
 
 const admin = await login('admin@example.com', 'admin123');
 const doc = await login('doctor@example.com', 'doctor123');
+// these checks cover manual stage assignment; the automatic workflow has its own test (workflow.test.js)
+await call('PUT', '/supervisor/settings', { autoFirstStage: false }, doc);
 const course = (await call('GET', '/courses', null, admin)).body[0];
 const course2 = (await call('POST', '/courses', { name: 'Databases' }, admin)).body;
 const supId = (await call('GET', '/supervisors', null, admin)).body[0].id;

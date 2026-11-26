@@ -5,6 +5,7 @@ import { fail } from './errors.js';
 import { storage } from './storage.js';
 
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
+export const MAX_TOTAL_BYTES = 25 * 1024 * 1024; // all files of one stage submission together
 
 // ---------- Check file (size & type) — «include» of Upload new version ----------
 const OLE = Buffer.from('D0CF11E0', 'hex'), ZIP = Buffer.from('PK\x03\x04', 'latin1');

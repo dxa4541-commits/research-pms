@@ -31,6 +31,8 @@ const day = off => new Date(Date.now() + off * 86400000).toISOString().slice(0, 
 
 const admin = await login('admin@example.com', 'admin123');
 const doc = await login('doctor@example.com', 'doctor123');
+// these checks cover manual stage assignment; the automatic workflow has its own test (workflow.test.js)
+await call('PUT', '/supervisor/settings', { autoFirstStage: false }, doc);
 const stu1 = await login('20240001', 'student123');
 const stu2 = await login('20240002', 'student123');
 // a second supervisor + an outsider student
@@ -161,10 +163,9 @@ await is(review(doc, sub1, { decision: 'approve' }), 409, 'only the latest attem
 await is(review(doc, sub1, { decision: 'comment', comment: 'Old note' }), 200, 'comments on older attempts are allowed');
 const sub2 = (await call('GET', `/stages/${st1}`, null, doc)).body.targets.find(t => t.research_id === t1).submission_id;
 await is(review(doc, sub2, { decision: 'request_changes', comment: 'Still weak' }), 200, 'second round of modifications');
-await is(sub(stu1, st1, t1, 'three.pdf', pdf), 409, 'attempt limit (2) stops further submissions');
+await is(sub(stu1, st1, t1, 'three.pdf', pdf), 200, 'a revision request always allows another attempt, even past the attempt limit (2)');
 await is(call('POST', `/stages/${st1}/targets/${t1}/allow-resubmit`, null, stu1), 403, 'student cannot grant resubmission');
 await is(call('POST', `/stages/${st1}/targets/${t1}/allow-resubmit`, null, doc), 200, 'supervisor allows another attempt');
-await is(sub(stu1, st1, t1, 'three.pdf', pdf), 200, 'student can submit the extra attempt');
 const sub3 = (await call('GET', `/stages/${st1}`, null, doc)).body.targets.find(t => t.research_id === t1).submission_id;
 await is(review(doc, sub3, { decision: 'approve' }), 200, 'approve a submission');
 await is(sub(stu1, st1, t1, 'four.pdf', pdf), 409, 'approved stage takes no more submissions');
