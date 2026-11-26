@@ -4,12 +4,12 @@ import { join, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { db } from './src/db.js';
 import { storage } from './src/storage.js';
-import { handlers, authenticate, HttpError, MAX_FILE_BYTES } from './src/controller.js';
+import { handlers, authenticate, HttpError, MAX_TOTAL_BYTES } from './src/controller.js';
 import { cleanup } from './src/controllers/auth.js';
 import { checkDeadlines } from './src/deadlines.js';
 
 const PUBLIC = join(fileURLToPath(new URL('.', import.meta.url)), 'public');
-const MAX_BODY = Math.ceil(MAX_FILE_BYTES * 1.4) + 4096; // base64 overhead
+const MAX_BODY = Math.ceil(MAX_TOTAL_BYTES * 1.4) + 4096; // base64 overhead (a stage submission may carry several files)
 
 const S = 'student', V = 'supervisor', A = 'admin';
 // [method, path, handler, allowed roles (null = public, [] = any logged-in user)]
@@ -102,6 +102,7 @@ const routes = [
   ['GET', '/api/research/:id/stages', 'researchStages', []],
   ['GET', '/api/research/:id/history', 'researchHistory', [V, A]],
   ['GET', '/api/stage-submissions/:id/file', 'downloadStageFile', []],
+  ['GET', '/api/stage-submission-files/:id/file', 'downloadStageSubmissionFile', []],
   ['POST', '/api/stage-submissions/:id/review', 'reviewStageSubmission', [V]],
   // Messaging (private team threads; admin has no access)
   ['GET', '/api/messages/threads', 'listThreads', [S, V]],
@@ -111,6 +112,8 @@ const routes = [
   ['GET', '/api/messages/:id/file', 'downloadMessageFile', [S, V]],
   // Supervisor dashboard & reports
   ['GET', '/api/supervisor/dashboard', 'dashboard', [V]],
+  ['GET', '/api/supervisor/settings', 'getWorkflowSettings', [V]],
+  ['PUT', '/api/supervisor/settings', 'updateWorkflowSettings', [V]],
   ['GET', '/api/supervisor/reports', 'supervisorReport', [V]],
   ['GET', '/api/supervisor/reports/export', 'exportReport', [V]],
   ['GET', '/api/reports', 'reports', [A]],

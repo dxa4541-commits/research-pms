@@ -333,7 +333,7 @@ export const studentTeamHandlers = {
         totals: st.totals, final_grade: g?.score ?? null, final_grade_comment: g?.comment ?? null, stages: st.stages,
       };
     });
-    const upcoming = research.filter(r => r.status === 'approved').flatMap(r => r.stages.filter(s => s.stage.deadline && s.stage.deadline >= today() && !['approved'].includes(s.status) && s.stage.state !== 'closed')
+    const upcoming = research.filter(r => r.status === 'approved').flatMap(r => r.stages.filter(s => s.phase !== 'locked' && s.stage.deadline && s.stage.deadline >= today() && !['approved'].includes(s.status) && s.stage.state !== 'closed')
       .map(s => ({ research_id: r.id, research: r.title, stage_id: s.stage.id, stage: s.stage.name, deadline: s.stage.deadline, display_status: s.display_status }))).sort((a, b) => a.deadline.localeCompare(b.deadline)).slice(0, 10);
     const leaderTeamIds = teams.filter(t => t.my_role === 'leader').map(t => t.id);
     const joinRequestsForMe = leaderTeamIds.length ? await db.prepare(`SELECT j.id,j.message,j.created_at,u.name,u.university_id,t.name AS team,t.id AS team_id FROM join_requests j JOIN users u ON u.id=j.user_id JOIN teams t ON t.id=j.team_id

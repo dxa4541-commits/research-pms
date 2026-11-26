@@ -3,7 +3,7 @@ import { db } from '../db.js';
 import { fail, str, need } from '../errors.js';
 import { notifyParties } from '../notifications.js';
 import { updateStatus, addNoteToLatest, accessible, own } from '../research.js';
-import { autoAssign } from '../stages.js';
+import { startWorkflow } from '../workflow.js';
 import { audit } from '../audit.js';
 
 export const reviewHandlers = {
@@ -17,10 +17,11 @@ export const reviewHandlers = {
     await db.prepare('UPDATE research SET rejection_reason=? WHERE id=?').run(status === 'rejected' ? comment : null, r.id);
     if (comment) await addNoteToLatest(r, user, comment);
     await db.prepare('INSERT INTO topic_reviews (research_id,reviewer_id,decision,comment) VALUES (?,?,?,?)').run(r.id, user.id, status, comment);
-    if (status === 'approved') await autoAssign(r);
     await notifyParties(r, 'n.' + status, { title: r.title, comment: comment ?? '' });
     await audit(user, `topic.${status}`, { researchId: r.id, detail: { comment } });
-    return { status };
+    // Approval starts the research workflow: the course's stages are queued and the first one is activated.
+    const workflow = status === 'approved' ? await startWorkflow(r, user) : null;
+    return { status, workflow };
   },
   // Supervisor: Request changes («extend» of Approve / reject proposal)
   async requestChanges({ user, params, body }) {

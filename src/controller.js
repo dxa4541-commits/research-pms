@@ -11,7 +11,7 @@ import { registrationHandlers } from './controllers/registration.js';
 import { studentTeamHandlers } from './controllers/studentTeams.js';
 
 export { HttpError } from './errors.js';
-export { MAX_FILE_BYTES } from './files.js';
+export { MAX_FILE_BYTES, MAX_TOTAL_BYTES } from './files.js';
 export { authenticate } from './controllers/auth.js';
 
 export const handlers = {
