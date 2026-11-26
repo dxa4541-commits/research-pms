@@ -29,8 +29,19 @@ export const teamView = async t => {
     members: (await activeMembers(t.id)).map(m => ({ id: m.id, name: m.name, university_id: m.university_id, leader: m.role === 'leader' })), research,
     stages: { total: rows.length, approved: rows.filter(r => r.status === 'approved').length, pending_review: rows.filter(r => r.pending_review).length,
       missing: rows.filter(r => r.missing).length, late: rows.filter(r => r.late).length },
+    stage_list: await stageList(rows),
   };
 };
+// Every stage of the team's research in order: what was handed in (latest attempt and its files), when, and the grade.
+async function stageList(rows) {
+  const subIds = rows.map(r => r.sub_id).filter(Boolean);
+  const files = subIds.length ? await db.prepare(`SELECT id,submission_id,filename,size FROM stage_submission_files WHERE submission_id IN (${subIds.map(() => '?').join(',')}) ORDER BY submission_id, position`).all(...subIds) : [];
+  return rows.map(r => ({
+    stage_id: r.stage_id, name: r.stage_name, phase: r.phase, status: r.display_status, late: r.late, deadline: r.deadline,
+    attempts: r.attempts, submission_id: r.sub_id ?? null, submitted_at: r.submitted_at ?? null, max_grade: r.max_grade, score: r.score ?? null,
+    files: !r.sub_id ? [] : files.some(f => f.submission_id === r.sub_id) ? files.filter(f => f.submission_id === r.sub_id).map(({ submission_id, ...f }) => f) : [{ id: null, filename: r.filename, size: null }],
+  }));
+}
 
 export const adminHandlers = {
   // Supervisor/Admin: Form teams. Every student must be enrolled, free in this course, and the size limits apply.

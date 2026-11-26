@@ -430,3 +430,6 @@ html[lang=ar] .sb-sec{letter-spacing:0;font-size:.76rem}
 body.viewer-open .main-col{margin-inline-end:min(48vw,900px)}
 .filechip{display:inline-flex;gap:4px;align-items:center}
 @media(max-width:900px){.viewer{width:100vw}body.viewer-open .main-col{margin-inline-end:0}.viewer-h .vl{display:none}}
+
+/* team card: the team's stages, one line each */
+.tstages{margin-top:10px;border-top:1px solid var(--line)}.tstage{cursor:pointer;border-radius:var(--r-sm)}.tstage:hover{background:var(--gray-bg)}
