@@ -4,7 +4,7 @@ import { icon, avatar, bindDropdowns, closeDropdowns, loading, errorBox, setCrum
 import { renderLogin, renderRegister, renderForcedPassword } from './views/auth.js';
 import { renderResearchList, renderDetail, renderSubmit, renderStudents } from './views/research.js';
 import { renderTeams, renderReports, renderUsers, renderCourses, renderRegistrations, renderApprovedIds, renderAdminDashboard } from './views/admin.js';
-import { renderDashboard, renderStages, renderSupervisorReports, renderReviewQueue, renderSupervisorGrades } from './views/supervisor.js';
+import { renderDashboard, renderStages, renderSupervisorReports, renderReviewQueue, renderSupervisorGrades, renderProposals } from './views/supervisor.js';
 import { renderStudentDashboard, renderTeamPage, renderTasks, renderStudentStages, renderStudentGrades } from './views/student.js';
 import { renderMessages } from './views/messages.js';
 import { renderNotifications, notifMeta } from './views/notifications.js';
@@ -14,7 +14,7 @@ import { renderSettings } from './views/settings.js';
 const SECTIONS = {
   student: [['overview', [['studentDash', 'dash', 'dashboard'], ['tasks', 'tasks', 'tasks']]], ['research', [['myResearch', 'book', 'myResearch'], ['stagesS', 'layers', 'stages'], ['grades', 'award', 'grades']]],
     ['collab', [['myTeam', 'users', 'team'], ['messages', 'message', 'messages']]], ['account', [['notifications', 'bell', 'notifications'], ['settings', 'settings', 'settings']]]],
-  supervisor: [['overview', [['dashboard', 'dash', 'dashboard']]], ['research', [['research', 'book', 'research'], ['stages', 'layers', 'stages'], ['review', 'inbox', 'review'], ['grades', 'award', 'grades']]],
+  supervisor: [['overview', [['dashboard', 'dash', 'dashboard']]], ['research', [['proposals', 'fileText', 'proposals'], ['research', 'book', 'research'], ['stages', 'layers', 'stages'], ['review', 'inbox', 'review'], ['grades', 'award', 'grades']]],
     ['people', [['students', 'user', 'students'], ['teams', 'users', 'teams'], ['messages', 'message', 'messages']]], ['insights', [['reports', 'chart', 'reports']]], ['account', [['notifications', 'bell', 'notifications'], ['settings', 'settings', 'settings']]]],
   admin: [['overview', [['adminDash', 'dash', 'dashboard']]], ['admission', [['registrations', 'userCheck', 'registrations'], ['ids', 'idcard', 'ids']]],
     ['management', [['users', 'users', 'users'], ['courses', 'book', 'courses'], ['research', 'fileText', 'research']]], ['insights', [['reports', 'chart', 'reports']]], ['account', [['notifications', 'bell', 'notifications'], ['settings', 'settings', 'settings']]]],
@@ -27,7 +27,7 @@ state.collapsed = lsGet('sbCollapsed') === '1';
 const views = {
   myResearch: renderResearchList, research: renderResearchList, topic: renderSubmit, students: renderStudents, teams: renderTeams, reports: v => state.user.role === 'admin' ? renderReports(v) : renderSupervisorReports(v),
   studentDash: renderStudentDashboard, myTeam: renderTeamPage, tasks: renderTasks, stagesS: renderStudentStages, grades: v => state.user.role === 'student' ? renderStudentGrades(v) : renderSupervisorGrades(v),
-  dashboard: renderDashboard, stages: renderStages, review: renderReviewQueue, messages: renderMessages, notifications: renderNotifications, settings: renderSettings,
+  dashboard: renderDashboard, proposals: renderProposals, stages: renderStages, review: renderReviewQueue, messages: renderMessages, notifications: renderNotifications, settings: renderSettings,
   adminDash: renderAdminDashboard, registrations: renderRegistrations, ids: renderApprovedIds, users: renderUsers, courses: renderCourses,
 };
 let seq = 0;
@@ -90,7 +90,7 @@ function updateChrome(u) {
   $(`#nav [data-tab="${state.tab}"]`)?.setAttribute('aria-current', 'page');
   const nb = k => $(`[data-nb="${k}"]`);
   const setBadge = (k, n) => { const el = nb(k); if (el) { el.hidden = !n; el.textContent = n > 99 ? '99+' : n; } };
-  setBadge('notifications', unread); if (u.role === 'supervisor') setBadge('review', state.pendingReviews ?? 0); if (u.role === 'admin') setBadge('registrations', state.pendingRegs ?? 0);
+  setBadge('notifications', unread); if (u.role === 'supervisor') { setBadge('review', state.pendingReviews ?? 0); setBadge('proposals', state.pendingProposals ?? 0); } if (u.role === 'admin') setBadge('registrations', state.pendingRegs ?? 0);
   $('#bdot').hidden = !unread; $('#bdot').textContent = unread > 9 ? '9+' : unread;
   const menu = $('#nmenu');
   menu.innerHTML = `<div class="dd-head row"><b class="grow">${t('nav.notifications')}</b><button class="link" id="nall">${t('viewAll')}</button></div>
@@ -116,7 +116,9 @@ async function render() {
   const extra = [api('GET', '/notifications').catch(() => [])];
   if (u.role === 'supervisor') extra.push(api('GET', '/stages').then(s => s.reduce((a, x) => a + x.counts.pending_review, 0)).catch(() => 0));
   if (u.role === 'admin') extra.push(api('GET', '/registrations?status=pending').then(r => r.length).catch(() => 0));
-  const [notifs, badge] = await Promise.all(extra);
+  if (u.role === 'supervisor') extra.push(api('GET', '/research?status=pending&limit=500').then(l => l.length).catch(() => 0));
+  const [notifs, badge, ideas] = await Promise.all(extra);
+  state.pendingProposals = ideas ?? 0;
   if (mine !== seq) return;
   state.notifs = notifs; state.pendingReviews = u.role === 'supervisor' ? badge : 0; state.pendingRegs = u.role === 'admin' ? badge : 0;
   const key = `${u.id}|${lang}|${theme}`;
