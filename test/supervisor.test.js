@@ -104,7 +104,12 @@ assert.equal((await call('GET', '/stages', null, doc2)).body.length, 0); ok('oth
 await is(call('GET', `/stages/${st1}`, null, doc2), 403, "other supervisor cannot open my stage");
 await is(call('GET', `/stages/${st1}`, null, stu1), 403, 'students cannot use the supervisor stage view');
 // edit / delete only before the stage starts
-await is(call('PUT', `/stages/${st1}`, { name: 'Lit', courseId: course.id }, doc), 409, 'started stage cannot be edited');
+const before1 = (await call('GET', '/stages', null, doc)).body.find(s => s.id === st1);
+await is(call('PUT', `/stages/${st1}`, { ...before1, name: 'Lit', maxGrade: 5, criteria: [], formats: ['txt'], startDate: before1.start_date, deadline: before1.deadline, description: 'New text' }, doc), 200, 'started stage: text and deadline can still be edited');
+const after1 = (await call('GET', '/stages', null, doc)).body.find(s => s.id === st1);
+assert.equal(after1.name, 'Lit'); assert.equal(after1.description, 'New text'); assert.equal(after1.max_grade, before1.max_grade); assert.equal(after1.criteria.length, before1.criteria.length);
+assert.deepEqual(after1.formats, before1.formats); ok('started stage keeps its grade, rubric and file rules');
+await call('PUT', `/stages/${st1}`, { ...before1, startDate: before1.start_date }, doc); // restore the name for the checks below
 await is(call('PUT', `/stages/${st3}`, { name: 'Draft v2', maxGrade: 30, formats: ['pdf'], allowResubmit: true, maxAttempts: 3, deadline: day(20) }, doc), 200, 'edit a stage that has not started');
 assert.equal((await call('GET', '/stages', null, doc)).body.find(s => s.id === st3).max_grade, 30); ok('edit persisted');
 await is(call('DELETE', `/stages/${st3}`, null, doc), 200, 'delete a stage that has not started');

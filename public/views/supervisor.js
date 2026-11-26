@@ -78,17 +78,25 @@ export async function renderStages(view) {
   if (state.stageForm) return renderStageForm(view);
   if (state.openStageId) return renderStageDetail(view, state.openStageId);
   setCrumbs([{ label: t('nav.stages') }]);
-  const stages = await api('GET', '/stages');
+  const [stages, wf] = await Promise.all([api('GET', '/stages'), api('GET', '/supervisor/settings').catch(() => ({ not_started: [] }))]);
+  const waiting = wf.not_started ?? [];
   view.innerHTML = `${pageHeader({ title: t('stagesTitle'), sub: t('st.sub'), actions: `<button id="new">${icon('plus')} ${t('newStage')}</button>` })}
+    ${waiting.length && stages.length ? `<div class="alert warn" style="margin-bottom:16px">${icon('alert')}<div class="grow"><p style="margin:0"><b>${t('wf.pendingT', { n: waiting.length })}</b></p>
+      <p class="small" style="margin:4px 0 0">${t('wf.pendingD')} ${waiting.slice(0, 5).map(x => `<span class="chip">${esc(x.label)} — ${esc(x.title)}</span>`).join(' ')}${waiting.length > 5 ? ' …' : ''}</p></div>
+      <button class="ok" id="startAll">${icon('layers')} ${t('wf.startAll')}</button></div>` : ''}
     ${stages.length ? stages.map((s, i) => { const c = s.counts; return `<section class="card"><div class="row" style="gap:12px;align-items:flex-start"><span class="avatar c1" aria-hidden="true">${i + 1}</span>
       <div class="grow" style="min-width:200px"><div class="row"><h3 style="margin:0"><a href="#" data-open="${s.id}">${esc(s.name)}</a></h3>${stateBadge(s.phase)}${s.grades_locked ? `<span class="badge closed">${icon('lock')}${t('locked')}</span>` : ''}</div>
         <div class="tl-meta"><span>${icon('book')} ${esc(s.course)}</span><span>${icon('flag')} ${s.deadline ? fmtDay(s.deadline) : '—'}</span>${s.deadline ? remBadge(s.deadline) : ''}<span>${icon('award')} ${num(s.max_grade)}</span>${s.criteria.length ? `<span>${icon('check')} ${t('rubric')}: ${s.criteria.length}</span>` : ''}</div>
         <div class="row small" style="gap:14px"><span>${t('assigned2')}: <b>${c.assigned}</b></span><span>${t('awaitingC')}: <b>${c.pending_review}</b></span><span>${t('approvedC2')}: <b>${c.approved}</b></span><span>${t('changesC')}: <b>${c.changes_requested}</b></span><span>${t('missingC')}: <b>${c.missing}</b></span><span class="${c.late ? 'overdue' : ''}">${t('lateC')}: <b>${c.late}</b></span>${c.locked ? `<span class="mute">${icon('lock')} ${t('sf.lockedC')}: <b>${c.locked}</b></span>` : ''}</div>
         <div style="max-width:320px;margin-top:8px">${progress(c.assigned ? c.approved / c.assigned * 100 : 0)}</div></div>
       <div class="row"><button class="ghost sm icon" data-up="${s.id}" ${i === 0 ? 'disabled' : ''} aria-label="${t('moveUp')}" data-tip="${t('moveUp')}">↑</button><button class="ghost sm icon" data-down="${s.id}" ${i === stages.length - 1 ? 'disabled' : ''} aria-label="${t('moveDown')}" data-tip="${t('moveDown')}">↓</button>
-        <button class="ghost sm" data-open="${s.id}">${t('stageTargets')} ${icon('right')}</button>${s.started ? '' : `<button class="ghost sm" data-edit="${s.id}">${icon('edit')} ${t('edit')}</button>`}${s.deletable ? `<button class="bad sm" data-del="${s.id}">${icon('trash')} ${t('del')}</button>` : ''}</div></div></section>`; }).join('')
+        <button class="ghost sm" data-open="${s.id}">${t('stageTargets')} ${icon('right')}</button><button class="ghost sm" data-edit="${s.id}">${icon('edit')} ${t('edit')}</button>${s.deletable ? `<button class="bad sm" data-del="${s.id}">${icon('trash')} ${t('del')}</button>` : ''}</div></div></section>`; }).join('')
       : `<div class="card">${empty({ ic: 'layers', title: t('noStages'), text: t('tl.noStagesD'), action: `<button id="new2">${icon('plus')} ${t('newStage')}</button>` })}</div>`}`;
   ['new', 'new2'].forEach(id => $('#' + id)?.addEventListener('click', () => { state.stageForm = { id: null }; render(); }));
+  $('#startAll')?.addEventListener('click', act(async () => {
+    if (!await confirmDialog({ title: t('wf.startAll'), text: t('wf.confirmAll', { n: waiting.length }), confirm: t('wf.start'), tone: 'ok' })) return;
+    const r = await api('POST', '/supervisor/workflow/start-all'); toast(t('wf.startedN', { n: r.started })); render();
+  }));
   view.querySelectorAll('[data-open]').forEach(a => a.onclick = e => { e.preventDefault(); openStage(Number(a.dataset.open)); });
   view.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { state.stageForm = { id: Number(b.dataset.edit) }; render(); });
   view.querySelectorAll('[data-del]').forEach(b => b.onclick = act(async () => {
@@ -110,7 +118,9 @@ async function renderStageForm(view) {
   const back = () => { state.stageForm = null; render(); };
   setCrumbs([{ label: t('nav.stages'), go: back }, { label: s ? t('editStage') : t('newStage') }]);
   const rows = s ? s.criteria.map(c => ({ name: c.name, max: c.max_score })) : [];
-  view.innerHTML = `${pageHeader({ title: s ? t('editStage') : t('newStage'), actions: `<button class="ghost" id="cancel">${icon('left')} ${t('back')}</button>` })}<form id="f" class="grid g-main" style="align-items:start"><div class="stack">
+  const frozen = !!s?.started; // started: grade, rubric, file rules and start date stay as they are
+  view.innerHTML = `${pageHeader({ title: s ? t('editStage') : t('newStage'), actions: `<button class="ghost" id="cancel">${icon('left')} ${t('back')}</button>` })}
+    ${frozen ? `<div class="alert warn" style="margin-bottom:16px">${icon('lock')}<p>${t('sf.partialEdit')}</p></div>` : ''}<form id="f" class="grid g-main" style="align-items:start"><div class="stack">
     <section class="card"><h3>${t('sf.basics')}</h3><label for="n">${t('stageName')}</label><input id="n" required maxlength="120" value="${esc(s?.name ?? '')}">
       <label for="c">${t('course')}</label><select id="c" ${s ? 'disabled' : ''}>${courseOpts(courses)}</select>
       <label for="d">${t('description')}</label><textarea id="d" maxlength="2000">${esc(s?.description ?? '')}</textarea><label for="i">${t('instructions')}</label><textarea id="i" maxlength="4000">${esc(s?.instructions ?? '')}</textarea>
@@ -140,6 +150,11 @@ async function renderStageForm(view) {
     view.querySelectorAll('[data-cx]').forEach(b => b.onclick = () => { rows.splice(Number(b.dataset.cx), 1); paint(); });
   };
   paint(); bindDateFields(view);
+  if (frozen) {
+    ['#sd', '#mg', '#mb', '#mf'].forEach(q => { const el = $(q); if (el) el.disabled = true; });
+    view.querySelector('[data-cal="sd"]')?.setAttribute('disabled', '');
+    view.querySelectorAll('[data-fmt], #crits input, #crits button, #addc, #defc').forEach(el => { el.disabled = true; });
+  }
   $('#addc').onclick = () => { rows.push({ name: '', max: 10 }); paint(); };
   $('#defc').onclick = () => { rows.length = 0; [40, 20, 20, 10, 10].forEach((m, i) => rows.push({ name: t('crit' + i), max: m })); paint(); };
   $('#cancel').onclick = back; $('#cancel2').onclick = back;
@@ -173,8 +188,8 @@ async function renderStageDetail(view, id) {
       actions: `<button class="ghost" id="back">${icon('left')} ${t('back')}</button>${s.state !== 'open' ? `<button class="ok" data-st="open">${icon('check')} ${s.state === 'closed' ? t('reopen') : t('open')}</button>` : ''}${s.state !== 'closed' ? `<button class="ghost" data-st="closed">${icon('lock')} ${t('close')}</button>` : ''}` })}
     <div class="card"><div class="row" style="gap:10px">${stateBadge(s.phase)}${s.grades_locked ? `<span class="badge closed">${icon('lock')}${t('locked')}</span>` : ''}<span class="small mute">${t('maxGrade')}: ${num(s.max_grade)} · ${t('limits', { f: s.formats.join(', '), mb: num(s.max_file_mb) })}</span></div>
       ${s.description ? `<p>${esc(s.description)}</p>` : ''}${s.instructions ? `<p class="small"><b>${t('requirements')}:</b> ${esc(s.instructions)}</p>` : ''}
-      ${d.criteria.length ? `<p class="small mute">${t('rubric')}: ${d.criteria.map(c => `${esc(c.name)} (${num(c.max_score)})`).join(' · ')}</p>` : ''}${s.started ? `<p class="small mute">${icon('lock')} ${t('editLocked')}</p>` : ''}
-      <div class="row"><button class="ghost sm" id="pp">${icon('calendar')} ${t('postpone')}</button><button class="ghost sm" id="pa">${icon('award')} ${t('publishAll')}</button><button class="ghost sm" id="lk">${icon('lock')} ${s.grades_locked ? t('unlockGrades') : t('lockGrades')}</button>${s.started ? '' : `<button class="ghost sm" id="ed">${icon('edit')} ${t('edit')}</button>`}<button class="ghost sm" id="hs">${icon('clock')} ${t('showHistory')}</button></div>
+      ${d.criteria.length ? `<p class="small mute">${t('rubric')}: ${d.criteria.map(c => `${esc(c.name)} (${num(c.max_score)})`).join(' · ')}</p>` : ''}${s.started ? `<p class="small mute">${icon('lock')} ${t('sf.partialEditShort')}</p>` : ''}
+      <div class="row"><button class="ghost sm" id="pp">${icon('calendar')} ${t('postpone')}</button><button class="ghost sm" id="pa">${icon('award')} ${t('publishAll')}</button><button class="ghost sm" id="lk">${icon('lock')} ${s.grades_locked ? t('unlockGrades') : t('lockGrades')}</button><button class="ghost sm" id="ed">${icon('edit')} ${t('edit')}</button><button class="ghost sm" id="hs">${icon('clock')} ${t('showHistory')}</button></div>
       <div class="row" id="ppbox" hidden style="margin-top:10px"><label class="inl" for="pps">${t('startDate')}</label>${dateField('pps', s.start_date ?? '', t('startDate'))}<label class="inl" for="ppd">${t('newDeadline')}</label>${dateField('ppd', s.deadline ?? '', t('newDeadline'))}<button class="sm" id="ppgo">${t('postpone')}</button></div></div>
     <div class="stats">${[['users', '', t('assigned2'), C.assigned], ['upload', '', t('submittedC'), C.submitted], ['inbox', C.pending_review ? 'warn' : '', t('awaitingC'), C.pending_review], ['checkc', 'ok', t('approvedC2'), C.approved], ['edit', C.changes_requested ? 'warn' : '', t('changesC'), C.changes_requested],
       ['x', '', t('rejectedC'), C.rejected], ['clock', '', t('missingC'), C.missing], ['alert', C.late ? 'bad' : '', t('lateC'), C.late], ['award', 'teal', t('gradedC'), C.graded]].map(([ic, tone, l, v]) => tile(ic, tone, l, v)).join('')}</div>
