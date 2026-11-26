@@ -154,6 +154,16 @@ for (const a of ['topic.registered', 'topic.changes_requested', 'topic.edited', 
   assert.ok(hist.includes(a), `history has ${a}`);
 ok('every step is recorded in the research activity history');
 
+// ---------- Deleting an open stage that has no work yet ----------
+const sx = (await mk({ name: 'Temp', assignAll: true })).body.id;   // active for the research (nothing else is active)
+assert.equal((await call('GET', '/stages', null, doc)).body.find(s => s.id === sx).deletable, true); ok('an active stage without work can be deleted');
+const sy = (await mk({ name: 'After temp', assignAll: true })).body.id;  // queued behind it
+await is(call('DELETE', `/stages/${sx}`, null, doc), 200, 'instructor deletes the active stage');
+assert.equal((await stagesOf(lead)).find(e => e.stage.id === sy).phase, 'active'); ok('the next queued stage takes its place');
+await is(call('DELETE', `/stages/${sy}`, null, doc), 200, 'and that one too');
+assert.equal((await call('GET', '/stages', null, doc)).body.find(s => s.id === s1).deletable, false); ok('a stage with submissions cannot be deleted');
+await is(call('DELETE', `/stages/${s1}`, null, doc), 409, 'deleting it is refused');
+
 // ---------- A stage added later joins the queue ----------
 const s4 = (await is(mk({ name: 'Presentation', assignAll: true }), 200, 'instructor adds a stage after the workflow finished (assign to all)')).body.id;
 ss = await stagesOf(lead);

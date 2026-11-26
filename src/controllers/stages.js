@@ -85,7 +85,7 @@ export const stageHandlers = {
       : await db.prepare('SELECT * FROM stages WHERE supervisor_id=? ORDER BY position, id').all(user.id);
     const course = db.prepare('SELECT name FROM courses WHERE id=?');
     const out = [];
-    for (const s of stages) out.push({ ...await publicStage(s), course: (await course.get(s.course_id))?.name, criteria: await criteriaOf(s.id), counts: countsFor(await targets('t.stage_id=?', s.id)) });
+    for (const s of stages) out.push({ ...await publicStage(s), deletable: !await hasWork(s.id), course: (await course.get(s.course_id))?.name, criteria: await criteriaOf(s.id), counts: countsFor(await targets('t.stage_id=?', s.id)) });
     return out;
   },
   async createStage({ user, body }) {
@@ -118,13 +118,17 @@ export const stageHandlers = {
     await audit(user, 'stage.updated', { stageId: s.id, detail: { name: p.name } });
     return { ok: true };
   },
+  // A stage can be deleted as long as nobody has submitted work or received a grade for it, even when it is open.
+  // Research for which it was the active stage moves on to its next stage.
   async deleteStage({ user, params }) {
     const s = await ownStage(user, Number(params.id));
-    if (await stageStarted(s)) fail(409, 'This stage has already started and cannot be deleted');
+    if (await hasWork(s.id)) fail(409, 'This stage already has submissions or grades and cannot be deleted');
+    const active = await db.prepare("SELECT research_id FROM stage_targets WHERE stage_id=? AND phase='active'").all(s.id);
     await db.prepare('UPDATE messages SET stage_id=NULL WHERE stage_id=?').run(s.id); // the messages stay; only their stage link goes
     await db.prepare('DELETE FROM deadline_events WHERE stage_id=?').run(s.id);
     await db.prepare('DELETE FROM stages WHERE id=?').run(s.id); // targets and criteria cascade
-    await audit(user, 'stage.deleted', { stageId: s.id, detail: { name: s.name } });
+    await audit(user, 'stage.deleted', { stageId: s.id, detail: { name: s.name, active: active.length } });
+    for (const { research_id } of active) await activateNext(await getResearch(research_id), user);
     return { ok: true };
   },
   // Open / close / postpone (any time). Postponing needs a new start date and/or deadline.
@@ -410,6 +414,9 @@ async function saveGrade(user, s, rid, body) {
   await audit(user, before == null ? 'stage.graded' : 'stage.grade_updated', { stageId: s.id, researchId: rid, detail: { from: before, to: score, criteria: parts, comment, published } });
   return { score, published, total: await stageTotals(rid) };
 }
+
+const hasWork = async stageId => !!await db.prepare(`SELECT 1 WHERE EXISTS (SELECT 1 FROM stage_submissions WHERE stage_id=?)
+  OR EXISTS (SELECT 1 FROM stage_grades WHERE stage_id=?)`).get(stageId, stageId);
 
 // Assign by explicit research ids and/or "all approved research of this course" (also remembered for future approvals).
 async function attach(stage, body) {

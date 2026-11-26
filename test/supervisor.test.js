@@ -105,7 +105,6 @@ await is(call('GET', `/stages/${st1}`, null, doc2), 403, "other supervisor canno
 await is(call('GET', `/stages/${st1}`, null, stu1), 403, 'students cannot use the supervisor stage view');
 // edit / delete only before the stage starts
 await is(call('PUT', `/stages/${st1}`, { name: 'Lit', courseId: course.id }, doc), 409, 'started stage cannot be edited');
-await is(call('DELETE', `/stages/${st1}`, null, doc), 409, 'started stage cannot be deleted');
 await is(call('PUT', `/stages/${st3}`, { name: 'Draft v2', maxGrade: 30, formats: ['pdf'], allowResubmit: true, maxAttempts: 3, deadline: day(20) }, doc), 200, 'edit a stage that has not started');
 assert.equal((await call('GET', '/stages', null, doc)).body.find(s => s.id === st3).max_grade, 30); ok('edit persisted');
 await is(call('DELETE', `/stages/${st3}`, null, doc), 200, 'delete a stage that has not started');
@@ -130,6 +129,7 @@ await is(sub(stu1, st1, t1, 'a.pdf', b64('not a pdf')), 415, 'content must match
 await is(sub(stu1, st1, t1, 'a.pdf', Buffer.concat([Buffer.from('%PDF'), Buffer.alloc(1.2 * 1048576)]).toString('base64')), 413, "stage's own size limit enforced");
 let a1 = (await is(sub(stu1, st1, t1, 'one.pdf', pdf, 'first try'), 200, 'student submits a stage')).body;
 assert.equal(a1.attempt, 1); assert.equal(a1.late, false);
+await is(call('DELETE', `/stages/${st1}`, null, doc), 409, 'a stage with submissions cannot be deleted');
 assert.ok((await keys(doc)).includes('n.stage.submitted')); ok('supervisor notified of the stage submission');
 await is(sub(stu2, st1, t1, 'two.pdf', pdf), 403, 'a team member who is not the leader cannot submit');
 await is(sub(stu1, st1, t1, 'two.pdf', pdf), 409, 'cannot submit again while awaiting review');
