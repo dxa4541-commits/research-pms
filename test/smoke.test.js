@@ -156,6 +156,17 @@ assert.equal((await call('POST', '/login', { email: 'doctor@example.com', passwo
 const html = await fetch(base + '/'); assert.equal(html.status, 200);
 assert.equal((await fetch(base + '/..%2fserver.js')).status, 404); ok('static + no path traversal');
 
+// one session per browser tab: a new tab forks the sign-in; signing out there leaves the first tab signed in
+{
+  const first = doc; // signed in at the start (the login limiter test above blocks new logins)
+  const fork = await call('POST', '/session/fork', null, first);
+  assert.equal(fork.status, 200); assert.ok(fork.body.token && fork.body.token !== first); ok('a new tab gets its own session');
+  assert.equal((await call('GET', '/me', null, fork.body.token)).body.email, 'doctor@example.com'); ok('…for the same account');
+  await call('POST', '/logout', null, fork.body.token);
+  assert.equal((await call('GET', '/me', null, fork.body.token)).status, 401); assert.equal((await call('GET', '/me', null, first)).status, 200); ok('signing out in one tab keeps the other tab signed in');
+  assert.equal((await call('POST', '/session/fork', null, 'nope')).status, 401); ok('no session from an invalid sign-in');
+}
+
 console.log(`\nAll ${n} checks passed`);
 server.close();
 await (await import('../src/db.js')).db.close();

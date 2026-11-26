@@ -35,6 +35,14 @@ export const authHandlers = {
     return { token, user: publicUser(u) };
   },
   async logout({ token }) { await db.prepare('DELETE FROM sessions WHERE token=?').run(token); return { ok: true }; },
+  // A newly opened browser tab gets its own session for the signed-in user, so signing out (or into another account)
+  // in one tab never ends the session of another tab. It keeps the original sign-in time: it expires at the same time.
+  async forkSession({ user, token }) {
+    const s = await db.prepare('SELECT created_at FROM sessions WHERE token=?').get(token);
+    const fresh = newToken();
+    await db.prepare('INSERT INTO sessions (token,user_id,created_at) VALUES (?,?,?)').run(fresh, user.id, s.created_at);
+    return { token: fresh };
+  },
   me({ user }) { return publicUser(user); },
   async changePassword({ user, token, body }) {
     if (!verifyPassword(String(body.currentPassword ?? ''), user.password_hash)) fail(403, 'Current password is incorrect');

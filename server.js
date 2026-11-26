@@ -17,6 +17,7 @@ const routes = [
   ['POST', '/api/login', 'login', null],
   ['POST', '/api/register', 'register', null],
   ['POST', '/api/logout', 'logout', []],
+  ['POST', '/api/session/fork', 'forkSession', []],
   ['GET', '/api/me', 'me', []],
   ['POST', '/api/me/password', 'changePassword', []],
   ['GET', '/api/courses', 'listCourses', []],
@@ -185,7 +186,7 @@ async function api(req, res, url) {
     const user = route.roles === null ? null : await authenticate(token);
     if (route.roles !== null) {
       if (!user) throw new HttpError(401, 'Please log in');
-      if (user.must_change_password && !['changePassword', 'me', 'logout'].includes(route.handler)) throw new HttpError(403, 'You must change your initial password first');
+      if (user.must_change_password && !['changePassword', 'me', 'logout', 'forkSession'].includes(route.handler)) throw new HttpError(403, 'You must change your initial password first');
       if (route.roles.length && !route.roles.includes(user.role)) throw new HttpError(403, 'Not allowed for your role');
     }
     const params = url.pathname.match(route.re).groups ?? {};

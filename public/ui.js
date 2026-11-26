@@ -1,5 +1,5 @@
 // Reusable UI components for the redesigned interface (no dependencies).
-import { esc, t, tErr, state, toast, render } from './core.js';
+import { esc, t, tErr, state, toast, render, getToken } from './core.js';
 
 // ---------- Icons (24×24 stroke icons, Feather-style paths) ----------
 const P = {
@@ -305,7 +305,7 @@ export function closeViewer() {
 }
 export async function viewPath(path, name) {
   const ext = String(name).split('.').pop().toLowerCase();
-  const res = await fetch(path, { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } });
+  const res = await fetch(path, { headers: { Authorization: 'Bearer ' + getToken() } });
   if (!res.ok) { let m = 'Request failed'; try { m = (await res.json()).error; } catch { /* not JSON */ } return toast(tErr(m), true); }
   closeViewer();
   viewerUrl = URL.createObjectURL(new Blob([await res.arrayBuffer()], { type: VIEWABLE[ext] ?? 'application/octet-stream' }));
