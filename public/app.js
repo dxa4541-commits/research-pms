@@ -9,6 +9,7 @@ import { renderStudentDashboard, renderTeamPage, renderTasks, renderStudentStage
 import { renderMessages } from './views/messages.js';
 import { renderNotifications, notifMeta } from './views/notifications.js';
 import { renderSettings } from './views/settings.js';
+import { openShare } from './views/share.js';
 
 // ---------- Navigation per role, grouped in sections: [section, [[key, icon, label], ...]] ----------
 const SECTIONS = {
@@ -47,6 +48,7 @@ function shellHtml(u) {
         <nav class="crumbs" id="crumbs" aria-label="breadcrumb"></nav>
         ${u.role !== 'admin' ? `<form class="search top-search" id="gs" role="search">${icon('search')}<input id="gq" type="search" placeholder="${t('searchPh')}" aria-label="${t('searchPh')}"><kbd aria-hidden="true">/</kbd></form>` : ''}
         <div class="top-actions">
+          ${u.role !== 'student' ? `<button class="icon" id="share" data-tip="${t('sh.title')}" aria-label="${t('sh.title')}">${icon('grid')}</button>` : ''}
           <button class="icon" id="theme" data-tip="${t(theme === 'dark' ? 'th.light' : 'th.dark')}" aria-label="${t(theme === 'dark' ? 'th.light' : 'th.dark')}">${icon(theme === 'dark' ? 'sun' : 'moon')}</button>
           <button class="icon" id="lang" data-tip="${t('language')}" aria-label="${t('language')}">${icon('globe')}<span class="lang-label small">${lang === 'ar' ? 'EN' : 'ع'}</span></button>
           <div class="dd"><button class="icon bell" data-dd="nmenu" id="bell" data-tip="${t('nav.notifications')}" aria-label="${t('nav.notifications')}">${icon('bell')}<span class="dot" id="bdot" hidden></span></button>
@@ -69,6 +71,7 @@ function bindShell(u) {
   $('#menu').onclick = () => shell.classList.add('drawer');
   $('#ov').onclick = () => shell.classList.remove('drawer');
   $('#lang').onclick = () => setLang(lang === 'ar' ? 'en' : 'ar');
+  $('#share')?.addEventListener('click', openShare);
   $('#theme').onclick = () => { state.shellKey = null; setTheme(theme === 'dark' ? 'light' : 'dark'); };
   $('#logout').onclick = act(async () => {
     await api('POST', '/logout'); localStorage.removeItem('token');

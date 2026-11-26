@@ -433,3 +433,9 @@ body.viewer-open .main-col{margin-inline-end:min(48vw,900px)}
 
 /* team card: the team's stages, one line each */
 .tstages{margin-top:10px;border-top:1px solid var(--line)}.tstage{cursor:pointer;border-radius:var(--r-sm)}.tstage:hover{background:var(--gray-bg)}
+
+/* share the site: QR code (always dark on white so phones read it, also in dark mode) */
+.share-qr{background:#fff;border-radius:var(--r-sm);padding:10px;width:min(260px,70vw);margin:8px auto 0}.share-qr svg{display:block;width:100%;height:auto}
+.share-url{text-align:center;font-weight:700;margin:8px 0 0;word-break:break-all}
+.share-full{position:fixed;inset:0;z-index:90;background:#fff;color:#1f3a5f;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;cursor:pointer}
+.share-full .share-qr.big{width:min(78vh,90vw);padding:0;margin:0}.share-full h2{margin:0;font-size:clamp(1.4rem,4vw,2.4rem)}.share-full .share-url{font-size:clamp(1.1rem,3vw,2rem)}
