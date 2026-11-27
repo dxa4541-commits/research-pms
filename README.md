@@ -34,17 +34,6 @@ Approved University IDs for trying the registration flow (non-production): `2024
 
 Model: `stage_targets.phase` = `locked | active | completed | closed`, per-research `due_date`; logic in `src/workflow.js`; tests in `test/workflow.test.js`.
 
-## Project poster folder / مجلد ملصقات المشاريع
-Each project fills in its one-slide project page (course template `assets/project-poster-template.pptx`): Arabic and English name,
-target audience, description, target colleges, project link and desktop + mobile screenshots. Team names and university IDs come
-from the team in the system, the QR code is generated from the link, and the server builds the `.pptx` slide (`src/poster.js`, no extra
-dependency). Student page: **Project poster**. Supervisor/admin page: **Posters folder**, which shows the state of every project in a course
-(complete / in progress / not started) and downloads one slide, or all of them as one presentation. API: `/api/research/:id/poster…`, `/api/posters…`;
-tests in `test/posters.test.js`.
-
-كل مشروع يعبّئ بيانات صفحته (الاسم بالعربي والإنجليزي، الفئة المستهدفة، الوصف، الكليات المستهدفة، الرابط، لقطتا سطح المكتب والجوال)
-من صفحة **ملصق المشروع**، فيبني النظام الشريحة من قالب المقرر ويضعها في **مجلد الملصقات** لدى المشرف، ومنه يحمّل شريحة كل مشروع أو كل الملصقات في عرض واحد.
-
 ## Use cases → where they live
 | Use case | Actor | Endpoint / controller fn |
 |---|---|---|

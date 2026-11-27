@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node --env-file-if-exists=.env server.js",
-    "test": "node test/smoke.test.js && node test/supervisor.test.js && node test/student.test.js && node test/workflow.test.js && node test/presentations.test.js && node test/posters.test.js && node test/qr.test.js && node test/storage.test.js"
+    "test": "node test/smoke.test.js && node test/supervisor.test.js && node test/student.test.js && node test/workflow.test.js && node test/presentations.test.js && node test/qr.test.js && node test/storage.test.js"
   },
   "engines": {
     "node": ">=22.9"

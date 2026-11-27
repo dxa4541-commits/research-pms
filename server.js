@@ -120,13 +120,6 @@ const routes = [
   ['GET', '/api/supervisor/dashboard', 'dashboard', [V]],
   ['GET', '/api/supervisor/settings', 'getWorkflowSettings', [V]],
   ['GET', '/api/supervisor/proposals', 'proposals', [V]],
-  // Project posters (one slide per project from the course template) and the supervisor's posters folder
-  ['GET', '/api/research/:id/poster', 'getPoster', []],
-  ['PUT', '/api/research/:id/poster', 'savePoster', [S]],
-  ['GET', '/api/research/:id/poster/image/:kind', 'posterImage', []],
-  ['GET', '/api/research/:id/poster/pptx', 'posterPptx', []],
-  ['GET', '/api/posters', 'listPosters', [V, A]],
-  ['GET', '/api/posters/pptx', 'postersPptx', [V, A]],
   // Final presentations
   ['GET', '/api/presentations', 'listPresentations', [S, V]],
   ['POST', '/api/presentations/slots', 'createSlots', [V]],
