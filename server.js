@@ -1,5 +1,6 @@
 import http from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { join, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { db } from './src/db.js';
@@ -211,18 +212,38 @@ async function api(req, res, url) {
   }
 }
 
-async function serveStatic(res, pathname) {
+// Static files: each answer carries an ETag, so a repeat visit only asks "changed?" and gets a tiny 304 back
+// (no-cache = always revalidate, so a new deploy shows at once). index.html lists every module as a
+// modulepreload, letting the browser fetch them all in parallel instead of discovering them import by import.
+const staticCache = new Map();
+async function preloadTags() {
+  const list = async dir => (await readdir(join(PUBLIC, dir))).filter(f => f.endsWith('.js')).map(f => `/${dir ? dir + '/' : ''}${f}`);
+  const mods = [...await list(''), ...await list('views')].filter(m => m !== '/app.js');
+  return mods.map(m => `<link rel="modulepreload" href="${m}">`).join('\n');
+}
+async function loadStatic(file) {
+  if (process.env.NODE_ENV === 'production' && staticCache.has(file)) return staticCache.get(file);
+  let body = await readFile(file);
+  if (file === join(PUBLIC, 'index.html')) body = Buffer.from(body.toString().replace('</head>', `${await preloadTags()}\n</head>`));
+  const entry = { body, etag: `"${createHash('sha1').update(body).digest('base64url').slice(0, 16)}"` };
+  staticCache.set(file, entry);
+  return entry;
+}
+async function serveStatic(req, res, pathname) {
   const rel = normalize(pathname === '/' ? '/index.html' : pathname);
   const file = join(PUBLIC, rel);
   if (!file.startsWith(PUBLIC) || !MIME[extname(file)]) return send(res, 404, 'Not found');
-  try { send(res, 200, await readFile(file), { 'Content-Type': MIME[extname(file)], ...(extname(file) === '.woff2' ? { 'Cache-Control': 'public, max-age=31536000, immutable' } : {}) }); }
-  catch { send(res, 404, 'Not found'); }
+  let f;
+  try { f = await loadStatic(file); } catch { return send(res, 404, 'Not found'); }
+  const cache = extname(file) === '.woff2' ? 'public, max-age=31536000, immutable' : 'no-cache';
+  if (req.headers['if-none-match'] === f.etag) return send(res, 304, undefined, { ETag: f.etag, 'Cache-Control': cache });
+  send(res, 200, f.body, { 'Content-Type': MIME[extname(file)], ETag: f.etag, 'Cache-Control': cache });
 }
 
 export const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname.startsWith('/api/')) api(req, res, url);
-  else serveStatic(res, decodeURIComponent(url.pathname));
+  else serveStatic(req, res, decodeURIComponent(url.pathname));
 });
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
