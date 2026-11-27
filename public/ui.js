@@ -200,7 +200,7 @@ export function bindDropzone(root, id, { formats = [], maxMb = 10, onChange = ()
 
 // run an async action on a button: disables it, shows the error toast
 export const withBusy = (btn, fn) => async (...a) => { btn.disabled = true; try { return await fn(...a); } finally { if (btn.isConnected) btn.disabled = false; } };
-export const go = (tab, extra = {}) => { state.tab = tab; state.openId = null; state.openStageId = null; state.stageForm = null; Object.assign(state, extra); render(); };
+export const go = (tab, extra = {}) => { state.tab = tab; state.openId = null; state.openStageId = null; state.stageForm = null; state.stCourse = null; Object.assign(state, extra); render(); };
 
 // ---------- Date field (locale-proof) ----------
 // The browser's own <input type=date> prints its placeholder in the browser language, which scrambles in an LTR page.
