@@ -74,32 +74,61 @@ export async function renderSupervisorGrades(view) {
 }
 
 // ---------- Stages: list ----------
+// Stages live inside a project (a course): the page lists the projects, and each one opens on its own ordered stages.
 export async function renderStages(view) {
   if (state.stageForm) return renderStageForm(view);
   if (state.openStageId) return renderStageDetail(view, state.openStageId);
+  if (state.stCourse) return renderProjectStages(view, state.stCourse);
   setCrumbs([{ label: t('nav.stages') }]);
   const arch = !!state.stArchived;
-  const [stages, wf] = await Promise.all([api('GET', '/stages' + (arch ? '?archived=1' : '')), api('GET', '/supervisor/settings').catch(() => ({ not_started: [] }))]);
+  const [courses, all, research, wf] = await Promise.all([api('GET', '/courses' + (arch ? '?all=1' : '')), api('GET', '/stages' + (arch ? '?archived=1' : '')),
+    api('GET', '/research?status=approved' + (arch ? '&archived=1' : '')), api('GET', '/supervisor/settings').catch(() => ({ not_started: [] }))]);
   const waiting = wf.not_started ?? [];
-  view.innerHTML = `${pageHeader({ title: t('stagesTitle'), sub: arch ? t('et.archivedStages') : t('st.sub'), actions: `<label class="inl small"><input type="checkbox" id="sarch" ${arch ? 'checked' : ''}> ${t('et.showArchived')}</label>${stages.length ? `<button class="ghost" id="copy">${icon('layers')} ${t('cp.btn')}</button>` : ''}<button id="new">${icon('plus')} ${t('newStage')}</button>` })}
-    ${waiting.length && stages.length ? `<div class="alert warn" style="margin-bottom:16px">${icon('alert')}<div class="grow"><p style="margin:0"><b>${t('wf.pendingT', { n: waiting.length })}</b></p>
+  const projects = courses.filter(c => arch ? c.archived_at && all.some(s => s.course_id === c.id) : !c.archived_at).map(c => {
+    const st = all.filter(s => s.course_id === c.id);
+    const next = st.map(s => s.deadline).filter(d => d && d >= new Date().toISOString().slice(0, 10)).sort()[0];
+    return { ...c, stages: st.length, research: research.filter(r => r.course === c.name).length, pending: st.reduce((a, s) => a + s.counts.pending_review, 0), next };
+  }).sort((a, b) => (b.stages > 0) - (a.stages > 0) || (b.research > 0) - (a.research > 0) || a.name.localeCompare(b.name));
+  view.innerHTML = `${pageHeader({ title: t('pj.title'), sub: arch ? t('et.archivedStages') : t('pj.sub'), actions: `<label class="inl small"><input type="checkbox" id="sarch" ${arch ? 'checked' : ''}> ${t('et.showArchived')}</label>` })}
+    ${waiting.length && all.length ? `<div class="alert warn" style="margin-bottom:16px">${icon('alert')}<div class="grow"><p style="margin:0"><b>${t('wf.pendingT', { n: waiting.length })}</b></p>
       <p class="small" style="margin:4px 0 0">${t('wf.pendingD')} ${waiting.slice(0, 5).map(x => `<span class="chip">${esc(x.label)} — ${esc(x.title)}</span>`).join(' ')}${waiting.length > 5 ? ' …' : ''}</p></div>
       <button class="ok" id="startAll">${icon('layers')} ${t('wf.startAll')}</button></div>` : ''}
-    ${stages.length ? stages.map((s, i) => { const c = s.counts; return `<section class="card"><div class="row" style="gap:12px;align-items:flex-start"><span class="avatar c1" aria-hidden="true">${i + 1}</span>
-      <div class="grow" style="min-width:200px"><div class="row"><h3 style="margin:0"><a href="#" data-open="${s.id}">${esc(s.name)}</a></h3>${stateBadge(s.phase)}${s.grades_locked ? `<span class="badge closed">${icon('lock')}${t('locked')}</span>` : ''}</div>
-        <div class="tl-meta"><span>${icon('book')} ${esc(s.course)}</span><span>${icon('flag')} ${s.deadline ? fmtDay(s.deadline) : '—'}</span>${s.deadline ? remBadge(s.deadline) : ''}<span>${icon('award')} ${num(s.max_grade)}</span>${s.criteria.length ? `<span>${icon('check')} ${t('rubric')}: ${s.criteria.length}</span>` : ''}</div>
-        <div class="row small" style="gap:14px"><span>${t('assigned2')}: <b>${c.assigned}</b></span><span>${t('awaitingC')}: <b>${c.pending_review}</b></span><span>${t('approvedC2')}: <b>${c.approved}</b></span><span>${t('changesC')}: <b>${c.changes_requested}</b></span><span>${t('missingC')}: <b>${c.missing}</b></span><span class="${c.late ? 'overdue' : ''}">${t('lateC')}: <b>${c.late}</b></span>${c.locked ? `<span class="mute">${icon('lock')} ${t('sf.lockedC')}: <b>${c.locked}</b></span>` : ''}</div>
-        <div style="max-width:320px;margin-top:8px">${progress(c.assigned ? c.approved / c.assigned * 100 : 0)}</div></div>
-      <div class="row" style="flex:1 1 auto;min-width:0;justify-content:flex-end"><button class="ghost sm icon" data-up="${s.id}" ${i === 0 ? 'disabled' : ''} aria-label="${t('moveUp')}" data-tip="${t('moveUp')}">↑</button><button class="ghost sm icon" data-down="${s.id}" ${i === stages.length - 1 ? 'disabled' : ''} aria-label="${t('moveDown')}" data-tip="${t('moveDown')}">↓</button>
-        <button class="ghost sm" data-open="${s.id}">${t('stageTargets')} ${icon('right')}</button><button class="ghost sm" data-edit="${s.id}">${icon('edit')} ${t('edit')}</button>${s.deletable ? `<button class="bad sm" data-del="${s.id}">${icon('trash')} ${t('del')}</button>` : ''}</div></div></section>`; }).join('')
-      : `<div class="card">${empty({ ic: 'layers', title: t('noStages'), text: t('tl.noStagesD'), action: `<button id="new2">${icon('plus')} ${t('newStage')}</button>` })}</div>`}`;
-  ['new', 'new2'].forEach(id => $('#' + id)?.addEventListener('click', () => { state.stageForm = { id: null }; render(); }));
-  $('#copy')?.addEventListener('click', () => openCopy(stages));
+    ${projects.length ? `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px">${projects.map(p => `<section class="card click" data-pj="${p.id}" style="cursor:pointer;margin:0">
+      <div class="row" style="gap:12px;align-items:flex-start"><span class="avatar c1" aria-hidden="true">${icon('book')}</span><div class="grow" style="min-width:0"><h3 style="margin:0"><a href="#" data-pj="${p.id}">${esc(p.name)}</a></h3>
+        <div class="tl-meta"><span>${icon('layers')} ${t('pj.stagesN', { n: p.stages })}</span><span>${icon('book')} ${t('pj.researchN', { n: p.research })}</span>${p.next ? `<span>${icon('flag')} ${fmtDay(p.next)}</span>` : ''}</div>
+        ${p.pending ? `<span class="badge pending">${icon('inbox')} ${t('pj.pendingN', { n: p.pending })}</span>` : ''}</div></div>
+      <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="ghost sm" data-pj="${p.id}">${t('pj.open')} ${icon('right')}</button></div></section>`).join('')}</div>`
+      : `<div class="card">${empty({ ic: 'book', title: t('pj.none'), text: t('pj.noneD') })}</div>`}`;
+  view.querySelectorAll('[data-pj]').forEach(a => a.onclick = e => { e.preventDefault(); e.stopPropagation(); state.stCourse = Number(a.dataset.pj); render(); });
   $('#sarch').onchange = e => { state.stArchived = e.target.checked; render(); };
   $('#startAll')?.addEventListener('click', act(async () => {
     if (!await confirmDialog({ title: t('wf.startAll'), text: t('wf.confirmAll', { n: waiting.length }), confirm: t('wf.start'), tone: 'ok' })) return;
     const r = await api('POST', '/supervisor/workflow/start-all'); toast(t('wf.startedN', { n: r.started })); render();
   }));
+}
+
+// ---------- One project: its stages in order, added and arranged right here ----------
+async function renderProjectStages(view, courseId) {
+  const arch = !!state.stArchived;
+  const [courses, all] = await Promise.all([api('GET', '/courses?all=1'), api('GET', '/stages' + (arch ? '?archived=1' : ''))]);
+  const course = courses.find(c => c.id === courseId);
+  const up = () => { state.stCourse = null; render(); };
+  if (!course) return up();
+  const stages = all.filter(s => s.course_id === courseId), ended = !!course.archived_at;
+  setCrumbs([{ label: t('nav.stages'), go: up }, { label: course.name }]);
+  const newBtn = id => ended ? '' : `<button id="${id}">${icon('plus')} ${t('pj.addStage')}</button>`;
+  view.innerHTML = `${pageHeader({ title: esc(course.name), sub: t('pj.inside', { n: stages.length }), actions: `<button class="ghost" id="back">${icon('left')} ${t('back')}</button>${!ended && all.length ? `<button class="ghost" id="copy">${icon('layers')} ${t('cp.btn')}</button>` : ''}${newBtn('new')}` })}
+    ${stages.length ? stages.map((s, i) => { const c = s.counts; return `<section class="card"><div class="row" style="gap:12px;align-items:flex-start"><span class="avatar c1" aria-hidden="true">${i + 1}</span>
+      <div class="grow" style="min-width:200px"><div class="row"><h3 style="margin:0"><a href="#" data-open="${s.id}">${esc(s.name)}</a></h3>${stateBadge(s.phase)}${s.grades_locked ? `<span class="badge closed">${icon('lock')}${t('locked')}</span>` : ''}</div>
+        <div class="tl-meta"><span>${icon('flag')} ${s.deadline ? fmtDay(s.deadline) : '—'}</span>${s.deadline ? remBadge(s.deadline) : ''}<span>${icon('award')} ${num(s.max_grade)}</span>${s.criteria.length ? `<span>${icon('check')} ${t('rubric')}: ${s.criteria.length}</span>` : ''}</div>
+        <div class="row small" style="gap:14px"><span>${t('assigned2')}: <b>${c.assigned}</b></span><span>${t('awaitingC')}: <b>${c.pending_review}</b></span><span>${t('approvedC2')}: <b>${c.approved}</b></span><span>${t('changesC')}: <b>${c.changes_requested}</b></span><span>${t('missingC')}: <b>${c.missing}</b></span><span class="${c.late ? 'overdue' : ''}">${t('lateC')}: <b>${c.late}</b></span>${c.locked ? `<span class="mute">${icon('lock')} ${t('sf.lockedC')}: <b>${c.locked}</b></span>` : ''}</div>
+        <div style="max-width:320px;margin-top:8px">${progress(c.assigned ? c.approved / c.assigned * 100 : 0)}</div></div>
+      <div class="row" style="flex:1 1 auto;min-width:0;justify-content:flex-end"><button class="ghost sm icon" data-up="${s.id}" ${i === 0 ? 'disabled' : ''} aria-label="${t('moveUp')}" data-tip="${t('moveUp')}">↑</button><button class="ghost sm icon" data-down="${s.id}" ${i === stages.length - 1 ? 'disabled' : ''} aria-label="${t('moveDown')}" data-tip="${t('moveDown')}">↓</button>
+        <button class="ghost sm" data-open="${s.id}">${t('stageTargets')} ${icon('right')}</button><button class="ghost sm" data-edit="${s.id}">${icon('edit')} ${t('edit')}</button>${s.deletable ? `<button class="bad sm" data-del="${s.id}">${icon('trash')} ${t('del')}</button>` : ''}</div></div></section>`; }).join('')
+      : `<div class="card">${empty({ ic: 'layers', title: t('pj.noStages'), text: t('pj.noStagesD'), action: newBtn('new2') })}</div>`}`;
+  ['new', 'new2'].forEach(id => $('#' + id)?.addEventListener('click', () => { state.stageForm = { id: null, courseId }; render(); }));
+  $('#back').onclick = up;
+  $('#copy')?.addEventListener('click', () => openCopy(all, courseId));
   view.querySelectorAll('[data-open]').forEach(a => a.onclick = e => { e.preventDefault(); openStage(Number(a.dataset.open)); });
   view.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { state.stageForm = { id: Number(b.dataset.edit) }; render(); });
   view.querySelectorAll('[data-del]').forEach(b => b.onclick = act(async () => {
@@ -118,14 +147,16 @@ export async function renderStages(view) {
 async function renderStageForm(view) {
   const [courses, research, stages] = await Promise.all([api('GET', '/courses'), api('GET', '/research?status=approved'), api('GET', '/stages')]);
   const id = state.stageForm.id, s = id ? stages.find(x => x.id === id) : null;
+  const pc = s?.course_id ?? state.stageForm.courseId ?? null, pcName = courses.find(c => c.id === pc)?.name ?? s?.course;
+  if (pc) state.stCourse = pc; // saving or going back lands inside the project
   const back = () => { state.stageForm = null; render(); };
-  setCrumbs([{ label: t('nav.stages'), go: back }, { label: s ? t('editStage') : t('newStage') }]);
+  setCrumbs([{ label: t('nav.stages'), go: () => { state.stCourse = null; back(); } }, ...(pcName ? [{ label: pcName, go: back }] : []), { label: s ? t('editStage') : t('newStage') }]);
   const rows = s ? s.criteria.map(c => ({ name: c.name, max: c.max_score })) : [];
   const frozen = !!s?.started; // started: grade, rubric, file rules and start date stay as they are
   view.innerHTML = `${pageHeader({ title: s ? t('editStage') : t('newStage'), actions: `<button class="ghost" id="cancel">${icon('left')} ${t('back')}</button>` })}
     ${frozen ? `<div class="alert warn" style="margin-bottom:16px">${icon('lock')}<p>${t('sf.partialEdit')}</p></div>` : ''}<form id="f" class="grid g-main" style="align-items:start"><div class="stack">
     <section class="card"><h3>${t('sf.basics')}</h3><label for="n">${t('stageName')}</label><input id="n" required maxlength="120" value="${esc(s?.name ?? '')}">
-      <label for="c">${t('course')}</label><select id="c" ${s ? 'disabled' : ''}>${courseOpts(courses)}</select>
+      <label for="c">${t('course')}</label><select id="c" ${s || pc ? 'disabled' : ''}>${courseOpts(courses)}</select>
       <label for="d">${t('description')}</label><textarea id="d" maxlength="2000">${esc(s?.description ?? '')}</textarea><label for="i">${t('instructions')}</label><textarea id="i" maxlength="4000">${esc(s?.instructions ?? '')}</textarea>
       <div class="field-row"><div><label for="sd">${t('startDate')}</label>${dateField('sd', s?.start_date ?? '', t('startDate'))}</div><div><label for="dl">${t('deadline')}</label>${dateField('dl', s?.deadline ?? '', t('deadline'))}</div>
         <div><label for="mg">${rows.length ? t('maxGradeFromRubric') : t('maxGrade')}</label><input type="number" id="mg" min="1" max="1000" step="0.5" value="${s?.max_grade ?? 100}"></div></div></section>
@@ -163,6 +194,7 @@ async function renderStageForm(view) {
   $('#addc').onclick = () => { rows.push({ name: '', max: 10 }); paint(); };
   $('#defc').onclick = () => { rows.length = 0; [40, 20, 20, 10, 10].forEach((m, i) => rows.push({ name: t('crit' + i), max: m })); paint(); };
   $('#cancel').onclick = back; $('#cancel2').onclick = back;
+  if (pc && !s) $('#c').value = String(pc);
   if (!s) { const byName = () => { const cn = $('#c').selectedOptions[0].textContent; view.querySelectorAll('#rl label').forEach(l => { l.style.display = l.textContent.includes(`(${cn})`) ? '' : 'none'; }); }; $('#c').onchange = byName; byName(); }
   $('#f').onsubmit = act(async e => {
     e.preventDefault();
@@ -181,8 +213,8 @@ async function renderStageDetail(view, id) {
   const d = await api('GET', `/stages/${id}`);
   const s = d.stage, C = d.counts;
   state.expanded ??= new Set();
-  const back = () => { state.openStageId = null; render(); };
-  setCrumbs([{ label: t('nav.stages'), go: back }, { label: s.name }]);
+  const back = () => { state.openStageId = null; state.stCourse = s.course_id ?? null; render(); };
+  setCrumbs([{ label: t('nav.stages'), go: () => { state.openStageId = null; state.stCourse = null; render(); } }, { label: s.course, go: back }, { label: s.name }]);
   const row = r => `<tr class="${r.late ? 'late' : ''}"><td data-label="${t('target')}"><div class="member" style="padding:0">${avatar(r.label)}<div class="t"><b>${esc(r.label)}</b><div class="tiny mute">${esc(r.title)}${r.team ? ' · ' + esc(r.student) : ''}</div></div></div></td>
     <td data-label="${t('status')}">${r.phase && r.phase !== 'active' ? `<span class="badge ${r.phase === 'locked' ? 'locked' : 'closed'}">${r.phase === 'locked' ? icon('lock') : ''}${t('phase.' + r.phase)}</span> ` : ''}${r.phase === 'locked' ? '' : badge(r.status)}${r.late ? ` <span class="badge overdue">${t('late')}</span>` : ''}${r.deadline && r.deadline !== s.deadline && r.phase === 'active' ? `<div class="tiny mute">${icon('flag')} ${fmtDay(r.deadline)}</div>` : ''}</td><td data-label="${t('attempts')}">${r.attempts}${r.attempts_left == null ? '' : ` <span class="mute small">(+${r.attempts_left})</span>`}</td>
     <td data-label="${t('submittedAt')}" class="small">${r.submitted_at ? fmtDate(r.submitted_at) : '—'}</td><td data-label="${t('grade')}">${r.score != null ? `${num(r.score)}/${num(s.max_grade)}` : '—'}</td>
@@ -261,7 +293,7 @@ export async function renderSupervisorReports(view) {
 }
 
 // ---------- Stage templates: copy stages into a course (a new term or another course) ----------
-async function openCopy(stages) {
+async function openCopy(stages, target = null) {
   const courses = await api('GET', '/courses');
   const byCourse = [...new Set(stages.map(s => s.course))];
   const m = modal({ title: t('cp.title'), ic: 'layers', body: `<p class="small mute">${t('cp.sub')}</p>
@@ -270,6 +302,10 @@ async function openCopy(stages) {
     <label for="cpd">${t('cp.shift')}</label><input type="number" id="cpd" min="-730" max="730" step="1" value="0"><p class="hint">${t('cp.shiftHint')}</p>`,
     actions: `<button class="ghost" data-x>${t('cancel')}</button><button class="ok" data-go>${icon('check')} ${t('cp.go')}</button>` });
   m.el.querySelector('[data-x]').onclick = m.close;
+  if (target) { // copying into this project: offer the other projects' stages
+    m.el.querySelector('#cpc').value = String(target);
+    m.el.querySelectorAll('#cps input').forEach(i => { i.checked = stages.find(s => s.id === Number(i.value))?.course_id !== target; });
+  }
   m.el.querySelector('[data-go]').onclick = act(async () => {
     const stageIds = [...m.el.querySelectorAll('#cps input:checked')].map(i => Number(i.value));
     if (!stageIds.length) throw new Error(t('cp.pick'));

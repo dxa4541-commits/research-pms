@@ -76,14 +76,14 @@ function bindShell(u) {
   $('#theme').onclick = () => { state.shellKey = null; setTheme(theme === 'dark' ? 'light' : 'dark'); };
   $('#logout').onclick = act(async () => {
     await api('POST', '/logout'); clearToken();
-    Object.assign(state, { user: null, screen: null, tab: null, openId: null, openStageId: null, stageForm: null, thread: null, expanded: null, notifs: [], shellKey: null, researchTab: null }); render();
+    Object.assign(state, { user: null, screen: null, tab: null, openId: null, openStageId: null, stageForm: null, stCourse: null, thread: null, expanded: null, notifs: [], shellKey: null, researchTab: null }); render();
   });
   if (!window.__slash) { window.__slash = true; document.addEventListener('keydown', e => { if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) && $('#gq')) { e.preventDefault(); $('#gq').focus(); } }); }
   if ($('#gs')) $('#gs').onsubmit = e => { e.preventDefault(); state.q = $('#gq').value.trim(); go(u.role === 'student' ? 'myResearch' : 'research'); };
 }
 
 function go(tab) {
-  state.tab = tab; state.openId = null; state.openStageId = null; state.stageForm = null; state.researchTab = null;
+  state.tab = tab; state.openId = null; state.openStageId = null; state.stageForm = null; state.stCourse = null; state.researchTab = null;
   $('#shell')?.classList.remove('drawer'); closeDropdowns(); render();
 }
 
@@ -130,7 +130,7 @@ async function render() {
   if (state.shellKey !== key || !$('#view')) { app.innerHTML = shellHtml(u); state.shellKey = key; bindShell(u); }
   updateChrome(u);
   setCrumbs([{ label: t('nav.' + (NAV[u.role].find(x => x[0] === state.tab)?.[2] ?? 'dashboard')) }]);
-  const view = $('#view'), sig = `${state.tab}|${state.openId}|${state.openStageId}|${state.stageForm?.id}|${state.researchTab}|${state.thread}`;
+  const view = $('#view'), sig = `${state.tab}|${state.openId}|${state.openStageId}|${state.stageForm?.id}|${state.stCourse}|${state.researchTab}|${state.thread}`;
   const sameScreen = state.lastSig === sig, y = window.scrollY;
   if (!sameScreen || !view.firstChild) view.innerHTML = loading();
   // The new screen is built in a hidden container placed first in the document (so `$()` finds its elements),
