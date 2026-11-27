@@ -21,7 +21,7 @@ const routes = [
   ['GET', '/api/me', 'me', []],
   ['POST', '/api/me/password', 'changePassword', []],
   ['GET', '/api/courses', 'listCourses', []],
-  ['POST', '/api/courses', 'createCourse', [A]],
+  ['POST', '/api/courses', 'createCourse', [V, A]], // a supervisor adds a project (course) from the stages page
   ['GET', '/api/supervisors', 'listSupervisors', []],
   ['GET', '/api/students', 'listStudents', [V, A]],
   ['GET', '/api/users', 'listUsers', [A]],
