@@ -167,6 +167,16 @@ assert.equal((await fetch(base + '/..%2fserver.js')).status, 404); ok('static + 
   assert.equal((await call('POST', '/session/fork', null, 'nope')).status, 401); ok('no session from an invalid sign-in');
 }
 
+// Static files: ETag revalidation (also when a compressing proxy weakened the tag) and module preloading
+{
+  const first = await fetch(base + '/app.js'), tag = first.headers.get('etag');
+  assert.ok(tag && first.headers.get('cache-control') === 'no-cache'); ok('static file has an ETag and must be revalidated');
+  for (const h of [tag, 'W/' + tag]) assert.equal((await fetch(base + '/app.js', { headers: { 'If-None-Match': h } })).status, 304);
+  ok('unchanged file answers 304, strong or weak tag');
+  assert.equal((await fetch(base + '/app.js', { headers: { 'If-None-Match': '"other"' } })).status, 200); ok('changed file is sent again');
+  assert.match(await (await fetch(base + '/')).text(), /<link rel="modulepreload" href="\/views\/supervisor.js">/); ok('index preloads the modules');
+}
+
 console.log(`\nAll ${n} checks passed`);
 server.close();
 await (await import('../src/db.js')).db.close();
