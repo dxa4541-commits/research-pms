@@ -9,7 +9,7 @@ export function notifMeta(n) {
   const is = (...p) => p.some(x => k === x || k.startsWith(x + '.'));
   if (is('n.registration', 'n.team.removed', 'n.team.deleted', 'n.change.rejected', 'n.rejected', 'n.stage.rejected', 'n.deadline.late')) return { cat: 'important', icon: 'alert', tone: 'bad' };
   if (is('n.deadline', 'n.stage.deadline', 'n.stage.state', 'n.deadline.soon')) return { cat: 'deadline', icon: 'clock', tone: 'warn' };
-  if (is('n.submitted', 'n.version', 'n.stage.submitted', 'n.stage.resubmitted', 'n.stage.late_submission', 'n.topic.resubmitted')) return { cat: 'submission', icon: 'upload', tone: '' };
+  if (is('n.submitted', 'n.version', 'n.stage.submitted', 'n.stage.resubmitted', 'n.stage.late_submission', 'n.topic.resubmitted', 'n.poster')) return { cat: 'submission', icon: 'upload', tone: '' };
   if (is('n.approved', 'n.stage.approved', 'n.graded', 'n.stage.graded', 'n.change.approved')) return { cat: 'feedback', icon: 'checkc', tone: 'ok' };
   if (is('n.changes_requested', 'n.note', 'n.stage.changes', 'n.stage.feedback', 'n.stage.resubmit', 'n.pending')) return { cat: 'feedback', icon: 'edit', tone: 'warn' };
   if (is('n.invitation', 'n.join', 'n.team', 'n.change')) return { cat: 'team', icon: 'users', tone: 'teal' };

@@ -119,7 +119,7 @@ export const db = {
     }
     for (let attempt = 1; ; attempt++) {
       const conn = await driver.acquire();
-      const ctx = { conn, savepoints: 0, pending: 0, done: false, onRollback: [] };
+      const ctx = { conn, savepoints: 0, pending: 0, done: false, onRollback: [], onCommit: [] };
       let broken = null;
       try {
         await conn.query('BEGIN ISOLATION LEVEL SERIALIZABLE');
@@ -128,6 +128,7 @@ export const db = {
         await conn.query('COMMIT');
         ctx.done = true;
         conn.release();
+        for (const then of ctx.onCommit) await Promise.resolve().then(then).catch(err => console.error('After-commit step failed:', err.message));
         return result;
       } catch (e) {
         ctx.done = true;
@@ -141,6 +142,8 @@ export const db = {
   },
   // Registers an undo step (e.g. delete an uploaded file) that runs if the current transaction rolls back.
   onRollback(fn) { const tx = txStore.getStore(); if (tx && !tx.done) tx.onRollback.push(fn); },
+  // Registers a step (e.g. delete a replaced file) that runs only once the current transaction has committed.
+  onCommit(fn) { const tx = txStore.getStore(); if (tx && !tx.done) tx.onCommit.push(fn); else return Promise.resolve().then(fn); },
   close: () => driver.close(),
 };
 
@@ -396,6 +399,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_pslot_research ON presentation_slots(resea
 CREATE TABLE IF NOT EXISTS presentation_schedules (
   supervisor_id INTEGER NOT NULL REFERENCES users(id), course_id INTEGER NOT NULL REFERENCES courses(id),
   locked INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (supervisor_id, course_id)
+);
+-- Project poster: the data a team enters for its one-slide project page (built from assets/project-poster-template.pptx).
+CREATE TABLE IF NOT EXISTS project_posters (
+  research_id INTEGER PRIMARY KEY REFERENCES research(id),
+  name_ar TEXT, name_en TEXT, audience TEXT, description TEXT,
+  colleges TEXT NOT NULL DEFAULT '[]', other_college TEXT, url TEXT,  -- colleges: JSON array of keys (src/poster.js COLLEGES)
+  desktop_file TEXT, desktop_ext TEXT, mobile_file TEXT, mobile_ext TEXT,  -- stored screenshots (png / jpg)
+  updated_by INTEGER REFERENCES users(id), updated_at TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ssub_token ON stage_submissions(research_id, client_token) WHERE client_token IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_ssfiles_sub ON stage_submission_files(submission_id);

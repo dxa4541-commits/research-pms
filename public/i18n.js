@@ -4,6 +4,7 @@ import { EXTRA as G_EXTRA } from './i18n-pages.js';
 import { EXTRA as P_EXTRA } from './i18n-premium.js';
 import { EXTRA as S_EXTRA, ERR_EXTRA as S_ERR, ERR_EXTRA_PATTERNS as S_PAT } from './i18n-student.js';
 import { EXTRA as W_EXTRA, ERR_EXTRA as W_ERR, ERR_EXTRA_PATTERNS as W_PAT } from './i18n-workflow.js';
+import { EXTRA as PO_EXTRA, ERR_EXTRA as PO_ERR, ERR_EXTRA_PATTERNS as PO_PAT } from './i18n-poster.js';
 // UI strings. Server error messages (English) are translated by exact match or pattern; unknown ones show as-is.
 export const I18N = {
   en: {
@@ -110,3 +111,5 @@ Object.assign(I18N.en, G_EXTRA.en); Object.assign(I18N.ar, G_EXTRA.ar);
 Object.assign(I18N.en, P_EXTRA.en); Object.assign(I18N.ar, P_EXTRA.ar);
 Object.assign(I18N.en, W_EXTRA.en); Object.assign(I18N.ar, W_EXTRA.ar);
 Object.assign(ERR_AR, W_ERR); ERR_AR_PATTERNS.unshift(...W_PAT);
+Object.assign(I18N.en, PO_EXTRA.en); Object.assign(I18N.ar, PO_EXTRA.ar);
+Object.assign(ERR_AR, PO_ERR); ERR_AR_PATTERNS.unshift(...PO_PAT);
