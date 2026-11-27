@@ -89,7 +89,7 @@ export async function renderStages(view) {
     const next = st.map(s => s.deadline).filter(d => d && d >= new Date().toISOString().slice(0, 10)).sort()[0];
     return { ...c, stages: st.length, research: research.filter(r => r.course === c.name).length, pending: st.reduce((a, s) => a + s.counts.pending_review, 0), next };
   }).sort((a, b) => (b.stages > 0) - (a.stages > 0) || (b.research > 0) - (a.research > 0) || a.name.localeCompare(b.name));
-  view.innerHTML = `${pageHeader({ title: t('pj.title'), sub: arch ? t('et.archivedStages') : t('pj.sub'), actions: `<label class="inl small"><input type="checkbox" id="sarch" ${arch ? 'checked' : ''}> ${t('et.showArchived')}</label>` })}
+  view.innerHTML = `${pageHeader({ title: t('pj.title'), sub: arch ? t('et.archivedStages') : t('pj.sub'), actions: `<label class="inl small"><input type="checkbox" id="sarch" ${arch ? 'checked' : ''}> ${t('et.showArchived')}</label>${arch ? '' : `<button id="newpj">${icon('plus')} ${t('pj.new')}</button>`}` })}
     ${waiting.length && all.length ? `<div class="alert warn" style="margin-bottom:16px">${icon('alert')}<div class="grow"><p style="margin:0"><b>${t('wf.pendingT', { n: waiting.length })}</b></p>
       <p class="small" style="margin:4px 0 0">${t('wf.pendingD')} ${waiting.slice(0, 5).map(x => `<span class="chip">${esc(x.label)} — ${esc(x.title)}</span>`).join(' ')}${waiting.length > 5 ? ' …' : ''}</p></div>
       <button class="ok" id="startAll">${icon('layers')} ${t('wf.startAll')}</button></div>` : ''}
@@ -98,13 +98,29 @@ export async function renderStages(view) {
         <div class="tl-meta"><span>${icon('layers')} ${t('pj.stagesN', { n: p.stages })}</span><span>${icon('book')} ${t('pj.researchN', { n: p.research })}</span>${p.next ? `<span>${icon('flag')} ${fmtDay(p.next)}</span>` : ''}</div>
         ${p.pending ? `<span class="badge pending">${icon('inbox')} ${t('pj.pendingN', { n: p.pending })}</span>` : ''}</div></div>
       <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="ghost sm" data-pj="${p.id}">${t('pj.open')} ${icon('right')}</button></div></section>`).join('')}</div>`
-      : `<div class="card">${empty({ ic: 'book', title: t('pj.none'), text: t('pj.noneD') })}</div>`}`;
+      : `<div class="card">${empty({ ic: 'book', title: t('pj.none'), text: t('pj.noneD'), action: arch ? '' : `<button id="newpj2">${icon('plus')} ${t('pj.new')}</button>` })}</div>`}`;
+  ['newpj', 'newpj2'].forEach(id => $('#' + id)?.addEventListener('click', newProject));
   view.querySelectorAll('[data-pj]').forEach(a => a.onclick = e => { e.preventDefault(); e.stopPropagation(); state.stCourse = Number(a.dataset.pj); render(); });
   $('#sarch').onchange = e => { state.stArchived = e.target.checked; render(); };
   $('#startAll')?.addEventListener('click', act(async () => {
     if (!await confirmDialog({ title: t('wf.startAll'), text: t('wf.confirmAll', { n: waiting.length }), confirm: t('wf.start'), tone: 'ok' })) return;
     const r = await api('POST', '/supervisor/workflow/start-all'); toast(t('wf.startedN', { n: r.started })); render();
   }));
+}
+
+// A new project is a course: students register their research in it, then its stages are added inside.
+function newProject() {
+  const m = modal({ title: t('pj.new'), ic: 'book', body: `<form id="pjf"><label for="pjn">${t('pj.name')}</label><input id="pjn" required maxlength="100" placeholder="${t('pj.namePh')}"><p class="hint">${t('pj.newHint')}</p></form>`,
+    actions: `<button class="ghost" data-x>${t('cancel')}</button><button data-go>${icon('check')} ${t('pj.create')}</button>` });
+  const name = m.el.querySelector('#pjn'); name.focus();
+  const save = act(async () => {
+    if (!name.value.trim()) { name.reportValidity(); return; }
+    const r = await api('POST', '/courses', { name: name.value.trim() });
+    m.close(); toast(t('pj.created')); state.stCourse = r.id; render();
+  });
+  m.el.querySelector('[data-x]').onclick = m.close;
+  m.el.querySelector('[data-go]').onclick = save;
+  m.el.querySelector('#pjf').onsubmit = e => { e.preventDefault(); save(); };
 }
 
 // ---------- One project: its stages in order, added and arranged right here ----------

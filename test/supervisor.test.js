@@ -298,7 +298,10 @@ assert.ok(csv.headers.get('content-type').startsWith('text/csv')); assert.ok(csv
 // ---------- Restrictions ----------
 await is(call('POST', '/users', { name: 'N', email: 'n@e.com', password: 'secret1', role: 'student' }, doc), 403, 'supervisor cannot manage users');
 await is(call('PATCH', `/users/${s1.id}/role`, { role: 'admin' }, doc), 403, 'supervisor cannot change roles');
-await is(call('POST', '/courses', { name: 'New' }, doc), 403, 'supervisor cannot manage courses');
+const proj = await call('POST', '/courses', { name: 'Supervisor Project' }, doc);
+assert.equal(proj.status, 200); ok('supervisor can add a project (course)');
+await is(call('POST', '/courses', { name: 'Supervisor Project' }, doc), 409, 'duplicate project name refused');
+await is(call('POST', `/courses/${proj.body.id}/end-term`, {}, doc), 403, 'supervisor cannot end a term');
 await is(call('PUT', `/research/${t1}/deadline`, { deadline: '2999-01-01' }, doc), 403, 'supervisor cannot change the global deadline');
 await is(call('GET', '/reports', null, doc), 403, 'supervisor cannot open admin reports');
 await is(call('GET', `/research/${t3}`, null, doc), 403, "supervisor cannot open another supervisor's research");

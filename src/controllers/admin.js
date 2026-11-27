@@ -124,12 +124,13 @@ export const adminHandlers = {
       .map(u => ({ ...u, courses: en.filter(x => x.user_id === u.id).map(x => x.course_id),
         teams: Object.fromEntries(tm.filter(x => x.user_id === u.id).map(x => [x.course_id, x.team_id])) }));
   },
-  async createCourse({ body }) {
+  async createCourse({ user, body }) {
     const name = need(body.name, 'Course name', 100);
     if (await db.prepare('SELECT 1 FROM courses WHERE name=?').get(name)) fail(409, 'Course already exists');
     try {
       const id = (await db.prepare('INSERT INTO courses (name) VALUES (?)').run(name)).lastInsertRowid;
       if (body.team_mode || body.max_team_size) await applySettings(id, body);
+      await audit(user, 'course.created', { detail: { id, name } });
       return { id };
     } catch (e) { if (e instanceof HttpError) throw e; fail(409, 'Course already exists'); }
   },
