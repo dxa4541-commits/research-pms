@@ -18,7 +18,8 @@ Requirements traceability: [supervisor](docs/SUPERVISOR_REQUIREMENTS.md) · [stu
 Research (own only): approve, reject **with reason**, request changes · custom stages (any number, formats, size, attempts, deadlines, rubric, assignment to students/teams, open/close/postpone, reorder) ·
 review and download every submission (all attempts kept), approve/modify/reject with feedback, allow resubmission · grade each stage (rubric) and the final research (0–100) ·
 manage teams (members, leader) · private messages, announcements and reminders · notifications · dashboard and reports (CSV) · history of every action.
-Not allowed: users/roles/course creation (team rules of a course can be set), global deadlines, other supervisors' data, deleting submissions or history.
+Projects: a supervisor can add a project (course) from the stages page and add its stages inside it.
+Not allowed: users/roles, ending or reopening a term, global deadlines, other supervisors' data, deleting submissions or history.
 Details and mapping to code: [docs/SUPERVISOR_REQUIREMENTS.md](docs/SUPERVISOR_REQUIREMENTS.md).
 
 Approved University IDs for trying the registration flow (non-production): `20240003` … `20240008`
