@@ -236,7 +236,9 @@ async function serveStatic(req, res, pathname) {
   let f;
   try { f = await loadStatic(file); } catch { return send(res, 404, 'Not found'); }
   const cache = extname(file) === '.woff2' ? 'public, max-age=31536000, immutable' : 'no-cache';
-  if (req.headers['if-none-match'] === f.etag) return send(res, 304, undefined, { ETag: f.etag, 'Cache-Control': cache });
+  // A compressing proxy (Render's) hands the tag out as weak, W/"…", so the browser sends it back that way.
+  const seen = String(req.headers['if-none-match'] ?? '').split(',').map(t => t.trim().replace(/^W\//, ''));
+  if (seen.includes(f.etag)) return send(res, 304, undefined, { ETag: f.etag, 'Cache-Control': cache });
   send(res, 200, f.body, { 'Content-Type': MIME[extname(file)], ETag: f.etag, 'Cache-Control': cache });
 }
 
